@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Send, Loader2, Brain, Target, Wrench, AlertTriangle } from 'lucide-react';
-import { simulateCofounder } from '../../lib/genai';
+import { ArrowLeft, Send, Loader2, Brain, Target, Wrench, AlertTriangle, RotateCcw, Lightbulb, TrendingUp, Database, ShieldAlert } from 'lucide-react';
+import { simulateCofounder, resetCofounderMemory } from '../../lib/genai';
 
 type Scenario = {
   id: string;
@@ -13,11 +13,19 @@ type CommunicationStyle = {
   name: string;
   description: string;
   icon: React.ReactNode;
+  color: string;
 };
 
 type Message = {
   role: 'user' | 'cofounder';
   content: string;
+  structuredData?: {
+    reasoning?: string;
+    nextSteps?: string[];
+    dataPoints?: string[];
+    risks?: string[];
+    opportunities?: string[];
+  };
 };
 
 type CoFounderSimulatorProps = {
@@ -32,18 +40,19 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
   const [isProcessing, setIsProcessing] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showStructuredData, setShowStructuredData] = useState(true);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
 
   const scenarios: Scenario[] = [
     {
       id: 'fundraising',
       title: 'Fundraising Strategy',
-      description: 'Discuss your startup\'s fundraising approach and investor pitch'
+      description: 'Discuss your startup\'s fundraising approach, valuation, and investor targeting'
     },
     {
       id: 'product',
       title: 'Product Development',
-      description: 'Debate product roadmap priorities and feature development'
+      description: 'Debate product roadmap priorities, feature development, and user feedback'
     },
     {
       id: 'pivot',
@@ -53,17 +62,27 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
     {
       id: 'hiring',
       title: 'Hiring Decision',
-      description: 'Discuss potential candidates for a key leadership position'
+      description: 'Discuss potential candidates for key leadership positions and team building'
     },
     {
       id: 'competition',
       title: 'Competitive Response',
-      description: 'Plan your strategy against new competitors in the market'
+      description: 'Plan your strategy against new competitors and market disruptions'
     },
     {
       id: 'scaling',
       title: 'Scaling Operations',
-      description: 'Discuss how to scale your business operations and team'
+      description: 'Discuss how to scale your business operations, team, and infrastructure'
+    },
+    {
+      id: 'acquisition',
+      title: 'Acquisition Opportunity',
+      description: 'Evaluate a potential acquisition target or merger opportunity'
+    },
+    {
+      id: 'international',
+      title: 'International Expansion',
+      description: 'Plan your strategy for entering new international markets'
     }
   ];
 
@@ -72,25 +91,29 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
       id: 'analytical',
       name: 'Analytical',
       description: 'Data-driven, logical, focused on metrics and evidence',
-      icon: <Brain className="h-5 w-5" />
+      icon: <Brain className="h-5 w-5" />,
+      color: 'blue'
     },
     {
       id: 'visionary',
       name: 'Visionary',
       description: 'Big-picture thinker, inspirational, future-oriented',
-      icon: <Target className="h-5 w-5" />
+      icon: <Target className="h-5 w-5" />,
+      color: 'purple'
     },
     {
       id: 'pragmatic',
       name: 'Pragmatic',
       description: 'Practical, solution-oriented, focuses on implementation',
-      icon: <Wrench className="h-5 w-5" />
+      icon: <Wrench className="h-5 w-5" />,
+      color: 'green'
     },
     {
       id: 'devil',
       name: 'Devil\'s Advocate',
       description: 'Challenges assumptions, identifies potential issues',
-      icon: <AlertTriangle className="h-5 w-5" />
+      icon: <AlertTriangle className="h-5 w-5" />,
+      color: 'red'
     }
   ];
 
@@ -118,24 +141,33 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
         throw new Error('Invalid scenario or style selected');
       }
 
-      // Get initial message from Gemini
-      const initialPrompt = `Start a co-founder conversation about ${scenario.title}. This is the beginning of our discussion.`;
+      // Get initial message from LangChain-powered Gemini
+      const initialPrompt = `Let's start discussing ${scenario.title}. This is the beginning of our co-founder conversation. Set the context and ask an engaging opening question.`;
       
-      const initialMessage = await simulateCofounder(
+      const response = await simulateCofounder(
         initialPrompt,
         selectedStyle as keyof any,
-        scenario.title,
-        []
+        scenario.title
       );
       
-      setMessages([{ role: 'cofounder', content: initialMessage }]);
+      setMessages([{ 
+        role: 'cofounder', 
+        content: response.response,
+        structuredData: {
+          reasoning: response.reasoning,
+          nextSteps: response.nextSteps,
+          dataPoints: response.dataPoints,
+          risks: response.risks,
+          opportunities: response.opportunities
+        }
+      }]);
     } catch (error) {
       console.error('Error initializing co-founder:', error);
       setError('Failed to initialize co-founder conversation. Please try again.');
       // Set a fallback message if API fails
       setMessages([{ 
         role: 'cofounder', 
-        content: `Hi! I'm excited to discuss ${scenarios.find(s => s.id === selectedScenario)?.title} with you. What's on your mind?` 
+        content: `Hi! I'm excited to discuss ${scenarios.find(s => s.id === selectedScenario)?.title} with you. What specific aspect would you like to focus on first?` 
       }]);
     } finally {
       setIsProcessing(false);
@@ -160,20 +192,24 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
         throw new Error('No scenario selected');
       }
 
-      // Pass conversation history to maintain context
-      const conversationHistory = messages.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'assistant' as const,
-        content: msg.content
-      }));
-
-      const responseContent = await simulateCofounder(
+      // Get structured response from LangChain-powered Gemini
+      const response = await simulateCofounder(
         userMessage,
         selectedStyle as keyof any,
-        scenario.title,
-        conversationHistory
+        scenario.title
       );
       
-      setMessages(prev => [...prev, { role: 'cofounder', content: responseContent }]);
+      setMessages(prev => [...prev, { 
+        role: 'cofounder', 
+        content: response.response,
+        structuredData: {
+          reasoning: response.reasoning,
+          nextSteps: response.nextSteps,
+          dataPoints: response.dataPoints,
+          risks: response.risks,
+          opportunities: response.opportunities
+        }
+      }]);
     } catch (error) {
       console.error('Error getting co-founder response:', error);
       setError('Failed to get co-founder response. Please try again.');
@@ -184,6 +220,97 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleResetConversation = () => {
+    if (selectedStyle) {
+      resetCofounderMemory(selectedStyle as keyof any);
+      setMessages([]);
+      setIsConfigured(false);
+      setError(null);
+    }
+  };
+
+  const getStyleColor = (styleId: string) => {
+    const style = communicationStyles.find(s => s.id === styleId);
+    switch (style?.color) {
+      case 'blue': return 'text-blue-600 dark:text-blue-400';
+      case 'purple': return 'text-purple-600 dark:text-purple-400';
+      case 'green': return 'text-green-600 dark:text-green-400';
+      case 'red': return 'text-red-600 dark:text-red-400';
+      default: return 'text-amber-600 dark:text-amber-400';
+    }
+  };
+
+  const renderStructuredData = (data: Message['structuredData']) => {
+    if (!data || !showStructuredData) return null;
+
+    return (
+      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600 space-y-2">
+        {data.reasoning && (
+          <div className="text-xs">
+            <span className="font-medium text-gray-600 dark:text-gray-400">Reasoning:</span>
+            <span className="ml-2 text-gray-500 dark:text-gray-400">{data.reasoning}</span>
+          </div>
+        )}
+        
+        {data.nextSteps && data.nextSteps.length > 0 && (
+          <div className="text-xs">
+            <span className="font-medium text-gray-600 dark:text-gray-400 flex items-center">
+              <Lightbulb className="h-3 w-3 mr-1" />
+              Next Steps:
+            </span>
+            <ul className="ml-4 mt-1 space-y-1">
+              {data.nextSteps.map((step, index) => (
+                <li key={index} className="text-gray-500 dark:text-gray-400">• {step}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {data.dataPoints && data.dataPoints.length > 0 && (
+          <div className="text-xs">
+            <span className="font-medium text-gray-600 dark:text-gray-400 flex items-center">
+              <Database className="h-3 w-3 mr-1" />
+              Data Points:
+            </span>
+            <ul className="ml-4 mt-1 space-y-1">
+              {data.dataPoints.map((point, index) => (
+                <li key={index} className="text-gray-500 dark:text-gray-400">• {point}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {data.risks && data.risks.length > 0 && (
+          <div className="text-xs">
+            <span className="font-medium text-gray-600 dark:text-gray-400 flex items-center">
+              <ShieldAlert className="h-3 w-3 mr-1" />
+              Risks:
+            </span>
+            <ul className="ml-4 mt-1 space-y-1">
+              {data.risks.map((risk, index) => (
+                <li key={index} className="text-gray-500 dark:text-gray-400">• {risk}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {data.opportunities && data.opportunities.length > 0 && (
+          <div className="text-xs">
+            <span className="font-medium text-gray-600 dark:text-gray-400 flex items-center">
+              <TrendingUp className="h-3 w-3 mr-1" />
+              Opportunities:
+            </span>
+            <ul className="ml-4 mt-1 space-y-1">
+              {data.opportunities.map((opportunity, index) => (
+                <li key={index} className="text-gray-500 dark:text-gray-400">• {opportunity}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
   };
 
   // Render configuration form if not configured yet
@@ -200,7 +327,7 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
           </button>
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Co-Founder Simulator</h2>
-            <p className="text-gray-600 dark:text-gray-300">Powered by Google Gemini</p>
+            <p className="text-gray-600 dark:text-gray-300">Powered by Google Gemini + LangChain</p>
           </div>
         </div>
         
@@ -300,26 +427,51 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
 
   return (
     <div className="flex flex-col h-[calc(100vh-16rem)]">
-      <div className="flex items-center mb-6">
-        <button 
-          onClick={onBack}
-          className="mr-4 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          aria-label="Go back"
-        >
-          <ArrowLeft size={20} className="text-gray-600 dark:text-gray-300" />
-        </button>
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Co-Founder Simulator</h2>
-          <div className="flex items-center text-gray-600 dark:text-gray-300 text-sm">
-            <span>{scenarios.find(s => s.id === selectedScenario)?.title}</span>
-            <span className="mx-2">•</span>
-            <div className="flex items-center">
-              {communicationStyles.find(s => s.id === selectedStyle)?.icon}
-              <span className="ml-1">{communicationStyles.find(s => s.id === selectedStyle)?.name} Style</span>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center">
+          <button 
+            onClick={onBack}
+            className="mr-4 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            aria-label="Go back"
+          >
+            <ArrowLeft size={20} className="text-gray-600 dark:text-gray-300" />
+          </button>
+          <div className="flex-1">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Co-Founder Simulator</h2>
+            <div className="flex items-center text-gray-600 dark:text-gray-300 text-sm">
+              <span>{scenarios.find(s => s.id === selectedScenario)?.title}</span>
+              <span className="mx-2">•</span>
+              <div className="flex items-center">
+                <span className={getStyleColor(selectedStyle || '')}>
+                  {communicationStyles.find(s => s.id === selectedStyle)?.icon}
+                </span>
+                <span className="ml-1">{communicationStyles.find(s => s.id === selectedStyle)?.name} Style</span>
+              </div>
+              <span className="mx-2">•</span>
+              <span className="text-xs">Powered by Gemini + LangChain</span>
             </div>
-            <span className="mx-2">•</span>
-            <span className="text-xs">Powered by Gemini</span>
           </div>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setShowStructuredData(!showStructuredData)}
+            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+              showStructuredData 
+                ? 'bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300'
+                : 'bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300'
+            }`}
+          >
+            {showStructuredData ? 'Hide' : 'Show'} Insights
+          </button>
+          <button
+            onClick={handleResetConversation}
+            className="flex items-center px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            aria-label="Reset conversation"
+          >
+            <RotateCcw size={14} className="mr-1" />
+            Reset
+          </button>
         </div>
       </div>
 
@@ -345,6 +497,7 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
                   }`}
                 >
                   <p className="whitespace-pre-line">{message.content}</p>
+                  {message.role === 'cofounder' && renderStructuredData(message.structuredData)}
                 </div>
               </div>
             ))}
@@ -352,7 +505,7 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
               <div className="flex justify-start">
                 <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 flex items-center">
                   <Loader2 size={16} className="animate-spin mr-2 text-amber-500" />
-                  <span className="text-gray-600 dark:text-gray-300">Co-founder is thinking...</span>
+                  <span className="text-gray-600 dark:text-gray-300">Co-founder is analyzing...</span>
                 </div>
               </div>
             )}
@@ -384,6 +537,10 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
               )}
             </button>
           </form>
+          
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+            Enhanced with LangChain for structured responses with reasoning, insights, and next steps
+          </div>
         </div>
       </div>
     </div>

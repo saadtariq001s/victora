@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { ArrowLeft, Mic, MicOff, Send, Loader2 } from 'lucide-react';
-import { mentorChat } from '../../lib/genai';
+import React, { useState, useRef, useEffect } from 'react';
+import { ArrowLeft, Mic, MicOff, Send, Loader2, RotateCcw } from 'lucide-react';
+import { mentorChat, resetMentorMemory } from '../../lib/genai';
 
 type AIMentorBotProps = {
   onBack: () => void;
@@ -10,7 +10,10 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([
-    { role: 'assistant', content: 'Hello! I\'m your AI Mentor powered by Gemini. I\'m here to help you learn, grow, and solve problems. What would you like to explore today?' }
+    { 
+      role: 'assistant', 
+      content: 'Hello! I\'m your AI Mentor powered by Google Gemini and LangChain. I\'m here to help you learn, grow, and solve problems with structured guidance and personalized insights. What would you like to explore today?' 
+    }
   ]);
   const [inputText, setInputText] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +40,7 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
     
     // Simulate speech recognition - in production, you'd use Web Speech API or send to speech service
     setTimeout(() => {
-      setInputText('How can I improve my problem-solving skills?');
+      setInputText('How can I improve my problem-solving skills using systematic approaches?');
       setIsProcessing(false);
     }, 1500);
   };
@@ -54,7 +57,7 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
     setError(null);
 
     try {
-      // Call the actual Gemini API
+      // Call the LangChain-powered Gemini API
       const responseContent = await mentorChat(userMessage);
       
       setMessages(prev => [...prev, { role: 'assistant', content: responseContent }]);
@@ -70,32 +73,54 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
       setError('Sorry, I encountered an error. Please try again.');
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: 'I apologize, but I encountered an error processing your request. Please try again.' 
+        content: 'I apologize, but I encountered an error processing your request. Please try again or rephrase your question.' 
       }]);
     } finally {
       setIsProcessing(false);
     }
   };
 
+  const handleResetConversation = () => {
+    resetMentorMemory();
+    setMessages([
+      { 
+        role: 'assistant', 
+        content: 'Conversation reset! I\'m ready to help you with fresh context. What would you like to learn or discuss today?' 
+      }
+    ]);
+    setError(null);
+  };
+
   // Scroll to bottom when messages change
-  React.useEffect(() => {
+  useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-16rem)]">
-      <div className="flex items-center mb-6">
-        <button 
-          onClick={onBack}
-          className="mr-4 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          aria-label="Go back"
-        >
-          <ArrowLeft size={20} className="text-gray-600 dark:text-gray-300" />
-        </button>
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">AI Mentor Bot</h2>
-          <p className="text-gray-600 dark:text-gray-300">Powered by Google Gemini</p>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center">
+          <button 
+            onClick={onBack}
+            className="mr-4 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            aria-label="Go back"
+          >
+            <ArrowLeft size={20} className="text-gray-600 dark:text-gray-300" />
+          </button>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">AI Mentor Bot</h2>
+            <p className="text-gray-600 dark:text-gray-300">Powered by Google Gemini + LangChain</p>
+          </div>
         </div>
+        
+        <button
+          onClick={handleResetConversation}
+          className="flex items-center px-3 py-2 text-sm bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          aria-label="Reset conversation"
+        >
+          <RotateCcw size={16} className="mr-2" />
+          Reset Chat
+        </button>
       </div>
 
       {error && (
@@ -126,6 +151,14 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
                 </div>
               </div>
             ))}
+            {isProcessing && (
+              <div className="flex justify-start">
+                <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 flex items-center">
+                  <Loader2 size={16} className="animate-spin mr-2 text-indigo-500" />
+                  <span className="text-gray-600 dark:text-gray-300">Mentor is thinking...</span>
+                </div>
+              </div>
+            )}
             <div ref={messageEndRef} />
           </div>
         </div>
@@ -151,7 +184,7 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               disabled={isProcessing || isRecording}
-              placeholder="Ask me anything about learning, technology, business, or personal growth..."
+              placeholder="Ask me about learning strategies, problem-solving, technology, business, or personal growth..."
               className="flex-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
             />
             
@@ -168,6 +201,10 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
               )}
             </button>
           </form>
+          
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+            Enhanced with LangChain for better conversation memory and structured responses
+          </div>
         </div>
       </div>
     </div>
