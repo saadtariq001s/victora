@@ -1,24 +1,23 @@
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { 
-  ChatPromptTemplate, 
-  SystemMessagePromptTemplate,
-  HumanMessagePromptTemplate 
-} from "@langchain/core/prompts";
-import { BufferMemory, ChatMessageHistory } from "langchain/memory";
-import { ConversationChain } from "langchain/chains";
-import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Initialize Gemini with correct configuration (no tool calling for now)
-const createModel = (temperature = 0.7) => new ChatGoogleGenerativeAI({
-  modelName: "gemini-pro",
-  temperature,
-  apiKey: "AIzaSyBg3Hip1lHjGdquwPUeLyR0Mhr9gTn17-g",
-  maxRetries: 2,
-});
+// Initialize Gemini - using the newer SDK approach
+const genAI = new GoogleGenerativeAI("AIzaSyBg3Hip1lHjGdquwPUeLyR0Mhr9gTn17-g");
+
+// Store conversation history for different tools
+let mentorHistory: Array<{ role: 'user' | 'model'; parts: string }> = [];
+const cofounderHistories: Record<string, Array<{ role: 'user' | 'model'; parts: string }>> = {
+  analytical: [],
+  visionary: [],
+  pragmatic: [],
+  devil: []
+};
 
 // AI Mentor Bot Implementation
-const mentorPrompt = ChatPromptTemplate.fromMessages([
-  SystemMessagePromptTemplate.fromTemplate(`You are an expert AI mentor and learning assistant with deep expertise in technology, business, science, and personal development.
+export const mentorChat = async (message: string): Promise<string> => {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    
+    const systemPrompt = `You are an expert AI mentor and learning assistant with deep expertise in technology, business, science, and personal development.
 
 Your role is to:
 - Provide clear, actionable guidance tailored to the user's learning level
@@ -36,33 +35,70 @@ Guidelines:
 - Use examples to illustrate complex concepts
 - Ask follow-up questions to guide deeper learning
 
-Previous conversation context: {history}`),
-  HumanMessagePromptTemplate.fromTemplate("{input}")
-]);
+Please respond to the user's message in a helpful and mentoring way.`;
 
-const mentorMemory = new BufferMemory({
-  returnMessages: true,
-  memoryKey: "history"
-});
-
-const mentorChain = new ConversationChain({
-  llm: createModel(),
-  prompt: mentorPrompt,
-  memory: mentorMemory,
-  verbose: false
-});
+    // Add user message to history
+    mentorHistory.push({ role: 'user', parts: message });
+    
+    // Create prompt with context
+    const prompt = `${systemPrompt}\n\nConversation history:\n${formatHistory(mentorHistory)}`;
+    
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
+    
+    // Add assistant response to history
+    mentorHistory.push({ role: 'model', parts: response });
+    
+    // Keep only last 10 exchanges (20 messages)
+    if (mentorHistory.length > 20) {
+      mentorHistory = mentorHistory.slice(-20);
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('Error in mentor chat:', error);
+    
+    // Provide a helpful fallback response
+    return "I apologize, but I'm having trouble processing your request right now. This might be due to a temporary issue with the AI service. Please try rephrasing your question or try again in a moment. \n\nIn the meantime, I encourage you to: \n1. Break down your challenge into smaller, specific questions \n2. Consider what resources or approaches you've already tried \n3. Think about what specific outcome you're hoping to achieve \n\nI'm here to help you learn and grow, so please don't hesitate to try again!";
+  }
+};
 
 // Market Research Assistant Implementation
-const marketResearchPrompt = ChatPromptTemplate.fromMessages([
-  SystemMessagePromptTemplate.fromTemplate(`You are a senior market research analyst with expertise in:
-- Industry trend analysis and market intelligence
-- Competitive landscape assessment  
-- Data interpretation and insight extraction
-- Market opportunity identification
-- Consumer behavior analysis
-- Strategic recommendations
+export const searchAndAnalyzeMarket = async (query: string): Promise<{
+  searchResults: Array<{
+    title: string;
+    source: string;
+    summary: string;
+    relevanceScore: number;
+  }>;
+  analysis: {
+    keyTrends: string[];
+    marketInsights: string;
+    opportunities: string[];
+    threats: string[];
+    recommendations: Array<{
+      action: string;
+      priority: "high" | "medium" | "low";
+      rationale: string;
+    }>;
+  };
+  competitiveAnalysis: {
+    keyPlayers: string[];
+    marketShare: {
+      leader: string;
+      challengerSegment: string;
+    };
+    competitiveAdvantages: string[];
+  };
+}> => {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    
+    const prompt = `You are a senior market research analyst with expertise in industry trend analysis, competitive landscape assessment, and strategic recommendations.
 
-Analyze the given market research query and provide insights in this structured format:
+Analyze the market research query: "${query}"
+
+Please provide a comprehensive analysis in the following structured format:
 
 SEARCH RESULTS:
 Generate 3-4 realistic search results with titles, sources, and summaries.
@@ -96,25 +132,47 @@ Market Share:
 Competitive Advantages:
 - [List 3-4 competitive advantages]
 
-Focus on realistic and actionable market data.`),
-  HumanMessagePromptTemplate.fromTemplate("Query to analyze: {query}")
-]);
+Focus on providing realistic, actionable insights based on current market conditions.`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
+    
+    // Parse the structured response
+    return parseMarketAnalysis(response, query);
+  } catch (error) {
+    console.error('Error in market research:', error);
+    
+    // Return fallback analysis
+    return createFallbackMarketAnalysis(query);
+  }
+};
 
 // Co-Founder Simulator Implementation
-const cofounderStyles = {
-  analytical: {
-    systemPrompt: `You are an analytical co-founder with a data-driven mindset. Your personality:
+export const simulateCofounder = async (
+  message: string, 
+  style: 'analytical' | 'visionary' | 'pragmatic' | 'devil',
+  scenario: string
+): Promise<{
+  response: string;
+  reasoning: string;
+  nextSteps?: string[];
+  dataPoints?: string[];
+  risks?: string[];
+  opportunities?: string[];
+}> => {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    
+    const systemPrompts = {
+      analytical: `You are an analytical co-founder with a data-driven mindset. Your personality:
 - Focus on metrics, KPIs, and quantifiable outcomes
 - Reference specific data points and statistical insights
 - Approach decisions through rigorous analysis
 - Question assumptions with evidence
 - Prioritize ROI and measurable results
 - Think systematically about cause and effect
-- Communicate with precision and clarity
 
-Always support your points with data or logical frameworks. Ask probing questions about metrics and measurement.
-
-Provide your response in this format:
+Always support your points with data or logical frameworks. Provide your response in this format:
 
 RESPONSE:
 [Your main response to the co-founder]
@@ -129,26 +187,17 @@ DATA POINTS:
 
 NEXT STEPS:
 - [Actionable step 1]
-- [Actionable step 2]
+- [Actionable step 2]`,
 
-Current scenario: {scenario}
-Conversation history: {history}`,
-    memory: new BufferMemory({ returnMessages: true, memoryKey: "history" }),
-    model: createModel()
-  },
-  visionary: {
-    systemPrompt: `You are a visionary co-founder who inspires through big-picture thinking. Your personality:
+      visionary: `You are a visionary co-founder who inspires through big-picture thinking. Your personality:
 - Focus on transformative opportunities and future potential
 - Think in terms of market disruption and innovation
 - Inspire with compelling future scenarios
 - Connect current actions to long-term vision
 - Challenge conventional thinking
 - Emphasize strategic positioning and competitive advantages
-- Communicate with passion and conviction
 
-Paint vivid pictures of what success could look like and challenge others to think beyond current limitations.
-
-Provide your response in this format:
+Paint vivid pictures of what success could look like. Provide your response in this format:
 
 RESPONSE:
 [Your main response to the co-founder]
@@ -163,26 +212,17 @@ OPPORTUNITIES:
 
 NEXT STEPS:
 - [Strategic step 1]
-- [Strategic step 2]
+- [Strategic step 2]`,
 
-Current scenario: {scenario}
-Conversation history: {history}`,
-    memory: new BufferMemory({ returnMessages: true, memoryKey: "history" }),
-    model: createModel()
-  },
-  pragmatic: {
-    systemPrompt: `You are a pragmatic co-founder focused on execution and realistic solutions. Your personality:
+      pragmatic: `You are a pragmatic co-founder focused on execution and realistic solutions. Your personality:
 - Prioritize actionable next steps and implementation
 - Focus on resource constraints and practical limitations
 - Break big goals into manageable milestones
 - Consider operational challenges and logistics
 - Emphasize timeline and budget considerations
 - Value proven approaches over unproven innovations
-- Communicate clearly about what's actually doable
 
-Always bring conversations back to concrete actions and realistic timelines.
-
-Provide your response in this format:
+Always bring conversations back to concrete actions. Provide your response in this format:
 
 RESPONSE:
 [Your main response to the co-founder]
@@ -193,26 +233,17 @@ REASONING:
 NEXT STEPS:
 - [Practical step 1 with timeline]
 - [Practical step 2 with timeline]
-- [Practical step 3 with timeline]
+- [Practical step 3 with timeline]`,
 
-Current scenario: {scenario}
-Conversation history: {history}`,
-    memory: new BufferMemory({ returnMessages: true, memoryKey: "history" }),
-    model: createModel()
-  },
-  devil: {
-    systemPrompt: `You are a co-founder who plays devil's advocate to strengthen decision-making. Your personality:
+      devil: `You are a co-founder who plays devil's advocate to strengthen decision-making. Your personality:
 - Challenge assumptions and identify blind spots
 - Explore potential risks and failure scenarios
 - Ask difficult questions others might avoid
 - Consider alternative perspectives and counterarguments
 - Test the robustness of proposed strategies
 - Identify potential negative consequences
-- Push for thorough risk assessment
 
-Your goal is to make the team's thinking stronger by constructively challenging ideas.
-
-Provide your response in this format:
+Your goal is to make the team's thinking stronger. Provide your response in this format:
 
 RESPONSE:
 [Your main response to the co-founder]
@@ -227,126 +258,90 @@ RISKS:
 
 NEXT STEPS:
 - [Risk mitigation step 1]
-- [Risk mitigation step 2]
-
-Current scenario: {scenario}
-Conversation history: {history}`,
-    memory: new BufferMemory({ returnMessages: true, memoryKey: "history" }),
-    model: createModel()
-  }
-};
-
-// Export functions
-export const mentorChat = async (message: string): Promise<string> => {
-  try {
-    const response = await mentorChain.call({ input: message });
-    return response.response;
-  } catch (error) {
-    console.error('Error in mentor chat:', error);
-    throw new Error('Failed to get mentor response. Please try again.');
-  }
-};
-
-export const searchAndAnalyzeMarket = async (query: string): Promise<{
-  searchResults: Array<{
-    title: string;
-    source: string;
-    summary: string;
-    relevanceScore: number;
-  }>;
-  analysis: {
-    keyTrends: string[];
-    marketInsights: string;
-    opportunities: string[];
-    threats: string[];
-    recommendations: Array<{
-      action: string;
-      priority: "high" | "medium" | "low";
-      rationale: string;
-    }>;
-  };
-  competitiveAnalysis: {
-    keyPlayers: string[];
-    marketShare: {
-      leader: string;
-      challengerSegment: string;
+- [Risk mitigation step 2]`
     };
-    competitiveAdvantages: string[];
-  };
-}> => {
-  try {
-    const model = createModel();
-    const chain = marketResearchPrompt.pipe(model);
     
-    const response = await chain.invoke({ query });
-    const analysisText = response.content.toString();
+    // Get conversation history for this style
+    const history = cofounderHistories[style] || [];
     
-    // Parse the structured response manually
-    const parsed = parseMarketAnalysis(analysisText, query);
-    return parsed;
-  } catch (error) {
-    console.error('Error in market research:', error);
+    // Add user message to history
+    history.push({ role: 'user', parts: message });
     
-    // Fallback response with structured data
-    return createFallbackMarketAnalysis(query);
-  }
-};
+    // Create prompt with context
+    const prompt = `${systemPrompts[style]}
 
-export const simulateCofounder = async (
-  message: string, 
-  style: keyof typeof cofounderStyles,
-  scenario: string
-): Promise<{
-  response: string;
-  reasoning: string;
-  nextSteps?: string[];
-  dataPoints?: string[];
-  risks?: string[];
-  opportunities?: string[];
-}> => {
-  try {
-    const cofounderStyle = cofounderStyles[style];
+Current scenario: ${scenario}
+
+Conversation history:
+${formatHistory(history)}
+
+Please respond to the latest message in character as the ${style} co-founder.`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
     
-    const prompt = ChatPromptTemplate.fromMessages([
-      SystemMessagePromptTemplate.fromTemplate(cofounderStyle.systemPrompt),
-      HumanMessagePromptTemplate.fromTemplate("{input}")
-    ]);
-
-    const chain = new ConversationChain({
-      llm: cofounderStyle.model,
-      prompt,
-      memory: cofounderStyle.memory,
-      verbose: false
-    });
-
-    const response = await chain.call({
-      input: message,
-      scenario
-    });
-
+    // Add assistant response to history
+    history.push({ role: 'model', parts: response });
+    
+    // Keep only last 10 exchanges (20 messages)
+    if (history.length > 20) {
+      history.splice(0, history.length - 20);
+    }
+    
+    // Update the history
+    cofounderHistories[style] = history;
+    
     // Parse the structured response
-    const parsed = parseCofounderResponse(response.response, style);
-    return parsed;
+    return parseCofounderResponse(response, style);
   } catch (error) {
     console.error('Error in co-founder simulation:', error);
-    throw new Error('Failed to generate co-founder response. Please try again.');
+    
+    // Provide a fallback response based on style
+    const fallbackResponses = {
+      analytical: {
+        response: "I'd like to analyze this decision more carefully. Let's look at the key metrics and data points that should inform our choice. What specific numbers or KPIs do we have to guide this decision?",
+        reasoning: "Taking an analytical approach to ensure data-driven decision making",
+        dataPoints: ["Need baseline metrics for comparison", "ROI analysis required", "Historical performance data needed"]
+      },
+      visionary: {
+        response: "This presents an interesting opportunity to think bigger. How does this align with our long-term vision? I see potential for significant impact if we approach this strategically.",
+        reasoning: "Focusing on strategic vision and long-term opportunities",
+        opportunities: ["Market disruption potential", "Innovation leadership opportunity", "Competitive differentiation possibility"]
+      },
+      pragmatic: {
+        response: "Let's focus on what we can realistically achieve with our current resources. What are the immediate next steps we need to take, and what timeline are we working with?",
+        reasoning: "Prioritizing practical implementation and resource management",
+        nextSteps: ["Define specific deliverables", "Set realistic timeline", "Allocate necessary resources"]
+      },
+      devil: {
+        response: "I want to make sure we're considering all the potential downsides here. What are the biggest risks we're overlooking? What could go wrong with this approach?",
+        reasoning: "Identifying potential risks and challenging assumptions",
+        risks: ["Potential market resistance", "Resource allocation concerns", "Competitive response risks"]
+      }
+    };
+    
+    return fallbackResponses[style];
   }
 };
 
 // Reset memory functions
 export const resetMentorMemory = () => {
-  mentorMemory.clear();
+  mentorHistory = [];
 };
 
-export const resetCofounderMemory = (style: keyof typeof cofounderStyles) => {
-  cofounderStyles[style].memory.clear();
+export const resetCofounderMemory = (style: 'analytical' | 'visionary' | 'pragmatic' | 'devil') => {
+  cofounderHistories[style] = [];
 };
 
-// Helper function to parse market analysis response
+// Helper functions
+function formatHistory(history: Array<{ role: 'user' | 'model'; parts: string }>): string {
+  return history.map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.parts}`).join('\n');
+}
+
 function parseMarketAnalysis(text: string, query: string): any {
   try {
-    // Extract search results
-    const searchResults = [
+    // Initialize with default values
+    let searchResults = [
       {
         title: `Market Analysis: ${query}`,
         source: "industry-insights.com",
@@ -367,9 +362,9 @@ function parseMarketAnalysis(text: string, query: string): any {
       }
     ];
 
-    // Extract trends
-    const trendsMatch = text.match(/Key Trends:\s*(.*?)(?=Market Insights:|$)/s);
-    const trends = trendsMatch ? 
+    // Extract key trends
+    const trendsMatch = text.match(/Key Trends:\s*(.*?)(?=Market Insights:|Opportunities:|$)/s);
+    const keyTrends = trendsMatch ? 
       trendsMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 5) :
       [
         "Growing market demand and adoption rates",
@@ -378,14 +373,14 @@ function parseMarketAnalysis(text: string, query: string): any {
         "Focus on sustainability and eco-friendly solutions"
       ];
 
-    // Extract insights
-    const insightsMatch = text.match(/Market Insights:\s*(.*?)(?=Opportunities:|$)/s);
-    const insights = insightsMatch ? 
+    // Extract market insights
+    const insightsMatch = text.match(/Market Insights:\s*(.*?)(?=Opportunities:|Threats:|$)/s);
+    const marketInsights = insightsMatch ? 
       insightsMatch[1].trim() :
-      `The market for ${query} shows strong growth potential with increasing adoption across multiple sectors. Key drivers include technological advancement, changing consumer preferences, and regulatory support.`;
+      `The market for ${query} shows strong growth potential with increasing adoption across multiple sectors. Key drivers include technological advancement, changing consumer preferences, and regulatory support. Market consolidation is expected as major players acquire innovative startups to strengthen their competitive position.`;
 
     // Extract opportunities
-    const oppMatch = text.match(/Opportunities:\s*(.*?)(?=Threats:|$)/s);
+    const oppMatch = text.match(/Opportunities:\s*(.*?)(?=Threats:|Recommendations:|$)/s);
     const opportunities = oppMatch ? 
       oppMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 4) :
       [
@@ -396,7 +391,7 @@ function parseMarketAnalysis(text: string, query: string): any {
       ];
 
     // Extract threats
-    const threatsMatch = text.match(/Threats:\s*(.*?)(?=Recommendations:|$)/s);
+    const threatsMatch = text.match(/Threats:\s*(.*?)(?=Recommendations:|COMPETITIVE ANALYSIS:|$)/s);
     const threats = threatsMatch ? 
       threatsMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 4) :
       [
@@ -449,8 +444,8 @@ function parseMarketAnalysis(text: string, query: string): any {
     return {
       searchResults,
       analysis: {
-        keyTrends: trends,
-        marketInsights: insights,
+        keyTrends,
+        marketInsights,
         opportunities,
         threats,
         recommendations
@@ -463,7 +458,6 @@ function parseMarketAnalysis(text: string, query: string): any {
   }
 }
 
-// Helper function to parse co-founder response
 function parseCofounderResponse(text: string, style: string): any {
   try {
     const responseMatch = text.match(/RESPONSE:\s*(.*?)(?=REASONING:|$)/s);
@@ -478,29 +472,29 @@ function parseCofounderResponse(text: string, style: string): any {
     if (style === 'analytical') {
       const dataMatch = text.match(/DATA POINTS:\s*(.*?)(?=NEXT STEPS:|$)/s);
       result.dataPoints = dataMatch ? 
-        dataMatch[1].split(/[-•]\s*/).filter(item => item.trim()) :
+        dataMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 3) :
         ["Review relevant metrics for this scenario"];
     }
 
     if (style === 'visionary') {
       const oppMatch = text.match(/OPPORTUNITIES:\s*(.*?)(?=NEXT STEPS:|$)/s);
       result.opportunities = oppMatch ? 
-        oppMatch[1].split(/[-•]\s*/).filter(item => item.trim()) :
+        oppMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 3) :
         ["Explore long-term strategic possibilities"];
     }
 
     if (style === 'devil') {
       const riskMatch = text.match(/RISKS:\s*(.*?)(?=NEXT STEPS:|$)/s);
       result.risks = riskMatch ? 
-        riskMatch[1].split(/[-•]\s*/).filter(item => item.trim()) :
+        riskMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 3) :
         ["Consider potential negative outcomes"];
     }
 
     // Extract next steps (common to all styles)
     const nextMatch = text.match(/NEXT STEPS:\s*(.*?)$/s);
     result.nextSteps = nextMatch ? 
-      nextMatch[1].split(/[-•]\s*/).filter(item => item.trim()) :
-      style === 'pragmatic' ? ["Continue discussion to clarify implementation details"] : undefined;
+      nextMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 3) :
+      ["Continue discussion to clarify implementation details"];
 
     return result;
   } catch (error) {
@@ -512,10 +506,9 @@ function parseCofounderResponse(text: string, style: string): any {
   }
 }
 
-// Helper functions
 function parseRecommendations(text: string): any[] {
   const recs = text.split(/[-•]\s*/).filter(item => item.trim());
-  return recs.map(rec => {
+  return recs.slice(0, 3).map(rec => {
     const priorityMatch = rec.match(/Priority:\s*(High|Medium|Low)/i);
     const rationaleMatch = rec.match(/Rationale:\s*(.*?)$/);
     const action = rec.replace(/Priority:.*$/i, '').trim();
@@ -535,7 +528,7 @@ function parseCompetitiveAnalysis(text: string): any {
 
   return {
     keyPlayers: playersMatch ? 
-      playersMatch[1].split(/[-•]\s*/).filter(item => item.trim()) :
+      playersMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 5) :
       ["Market Leader Corp", "Innovation Systems Inc", "Global Solutions Ltd", "Tech Pioneers Co"],
     marketShare: shareMatch ? {
       leader: shareMatch[1].split(/[-•]/)[0]?.trim() || "Market Leader Corp with 35% market share",
@@ -545,7 +538,7 @@ function parseCompetitiveAnalysis(text: string): any {
       challengerSegment: "Innovation Systems Inc leading the challenger segment with 18%"
     },
     competitiveAdvantages: advMatch ? 
-      advMatch[1].split(/[-•]\s*/).filter(item => item.trim()) :
+      advMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 4) :
       [
         "Strong brand recognition and customer loyalty",
         "Advanced technology and R&D capabilities",
