@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  }
+
+  body {
+    @apply antialiased;
+  }
+  
+  .dark {
+    color-scheme: dark;
+  }
+}
+
+@layer utilities {
+  .indigo-gradient {
+    @apply bg-gradient-to-r from-indigo-500 to-purple-600;
+  }
+  
+  .teal-gradient {
+    @apply bg-gradient-to-r from-teal-500 to-emerald-600;
+  }
+  
+  .amber-gradient {
+    @apply bg-gradient-to-r from-amber-500 to-orange-600;
+  }
+}
