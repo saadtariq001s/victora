@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Send, Loader2 } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Brain, Target, Wrench, AlertTriangle } from 'lucide-react';
+import { simulateCofounder } from '../../lib/genai';
 
 type Scenario = {
   id: string;
@@ -11,6 +12,7 @@ type CommunicationStyle = {
   id: string;
   name: string;
   description: string;
+  icon: React.ReactNode;
 };
 
 type Message = {
@@ -29,6 +31,7 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
   const [inputText, setInputText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
 
   const scenarios: Scenario[] = [
@@ -51,6 +54,16 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
       id: 'hiring',
       title: 'Hiring Decision',
       description: 'Discuss potential candidates for a key leadership position'
+    },
+    {
+      id: 'competition',
+      title: 'Competitive Response',
+      description: 'Plan your strategy against new competitors in the market'
+    },
+    {
+      id: 'scaling',
+      title: 'Scaling Operations',
+      description: 'Discuss how to scale your business operations and team'
     }
   ];
 
@@ -58,32 +71,32 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
     {
       id: 'analytical',
       name: 'Analytical',
-      description: 'Data-driven, logical, focused on metrics and evidence'
+      description: 'Data-driven, logical, focused on metrics and evidence',
+      icon: <Brain className="h-5 w-5" />
     },
     {
       id: 'visionary',
       name: 'Visionary',
-      description: 'Big-picture thinker, inspirational, future-oriented'
+      description: 'Big-picture thinker, inspirational, future-oriented',
+      icon: <Target className="h-5 w-5" />
     },
     {
       id: 'pragmatic',
       name: 'Pragmatic',
-      description: 'Practical, solution-oriented, focuses on implementation'
+      description: 'Practical, solution-oriented, focuses on implementation',
+      icon: <Wrench className="h-5 w-5" />
     },
     {
       id: 'devil',
       name: 'Devil\'s Advocate',
-      description: 'Challenges assumptions, identifies potential issues'
+      description: 'Challenges assumptions, identifies potential issues',
+      icon: <AlertTriangle className="h-5 w-5" />
     }
   ];
 
   useEffect(() => {
     if (selectedScenario && selectedStyle && !isConfigured) {
-      setIsConfigured(true);
-      
-      // Initialize conversation with a greeting based on selected scenario
-      const initialMessage = getInitialMessage();
-      setMessages([{ role: 'cofounder', content: initialMessage }]);
+      initializeCofounder();
     }
   }, [selectedScenario, selectedStyle, isConfigured]);
 
@@ -92,27 +105,44 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const getInitialMessage = () => {
-    const scenario = scenarios.find(s => s.id === selectedScenario);
-    const style = communicationStyles.find(s => s.id === selectedStyle);
+  const initializeCofounder = async () => {
+    setIsConfigured(true);
+    setIsProcessing(true);
+    setError(null);
     
-    if (!scenario || !style) return '';
-    
-    switch (scenario.id) {
-      case 'fundraising':
-        return `Let's talk about our fundraising strategy. We need to decide how much to raise and what kind of investors to target. As someone with an ${style.name.toLowerCase()} approach, I think we should consider the market conditions carefully. What are your thoughts?`;
-      case 'product':
-        return `I've been reviewing our product roadmap. We need to prioritize which features to build next. From my ${style.name.toLowerCase()} perspective, I have some concerns about our current direction. What features do you think we should focus on?`;
-      case 'pivot':
-        return `The market feedback we're getting suggests we might need to pivot our business model. As your ${style.name.toLowerCase()} co-founder, I think we should evaluate our options carefully. How do you feel about changing our direction?`;
-      case 'hiring':
-        return `We need to make a decision about the VP of Engineering role. We have two strong candidates with different backgrounds. Taking a ${style.name.toLowerCase()} approach, I'm thinking about both long-term fit and immediate needs. What qualities are you looking for in this hire?`;
-      default:
-        return `Let's discuss our startup's strategy. As your ${style.name.toLowerCase()} co-founder, I'm excited to work through these challenges together. What's on your mind today?`;
+    try {
+      const scenario = scenarios.find(s => s.id === selectedScenario);
+      const style = communicationStyles.find(s => s.id === selectedStyle);
+      
+      if (!scenario || !style) {
+        throw new Error('Invalid scenario or style selected');
+      }
+
+      // Get initial message from Gemini
+      const initialPrompt = `Start a co-founder conversation about ${scenario.title}. This is the beginning of our discussion.`;
+      
+      const initialMessage = await simulateCofounder(
+        initialPrompt,
+        selectedStyle as keyof any,
+        scenario.title,
+        []
+      );
+      
+      setMessages([{ role: 'cofounder', content: initialMessage }]);
+    } catch (error) {
+      console.error('Error initializing co-founder:', error);
+      setError('Failed to initialize co-founder conversation. Please try again.');
+      // Set a fallback message if API fails
+      setMessages([{ 
+        role: 'cofounder', 
+        content: `Hi! I'm excited to discuss ${scenarios.find(s => s.id === selectedScenario)?.title} with you. What's on your mind?` 
+      }]);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!inputText.trim() || isProcessing || !isConfigured) return;
@@ -121,44 +151,39 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setInputText('');
     setIsProcessing(true);
+    setError(null);
 
-    // Simulated AI response - would connect to GPT-4 API in a real implementation
-    setTimeout(() => {
-      const style = communicationStyles.find(s => s.id === selectedStyle);
+    try {
       const scenario = scenarios.find(s => s.id === selectedScenario);
       
-      // Generate a response based on the selected style and scenario
-      let responseContent = '';
-      
-      if (style?.id === 'analytical') {
-        responseContent = `Looking at this objectively, I see several data points we should consider. Our unit economics show ${scenario?.id === 'fundraising' ? 'we have a 14-month runway at current burn rate' : scenario?.id === 'product' ? 'feature X has the highest engagement metrics' : scenario?.id === 'pivot' ? 'our conversion rate has dropped 22% in the last quarter' : 'candidate A has 40% more relevant experience'}. 
-
-Based on my analysis, I recommend we ${scenario?.id === 'fundraising' ? 'target strategic investors who can provide industry connections' : scenario?.id === 'product' ? 'prioritize features with proven user demand' : scenario?.id === 'pivot' ? 'test a new positioning before fully pivoting' : 'choose the candidate with more technical leadership experience'}. 
-
-What specific metrics are most important to you in making this decision?`;
-      } else if (style?.id === 'visionary') {
-        responseContent = `I see tremendous potential in where we could take this. Imagine if we ${scenario?.id === 'fundraising' ? 'secured funding that allowed us to expand into three new markets simultaneously' : scenario?.id === 'product' ? 'built something truly revolutionary that changes how people think about this space' : scenario?.id === 'pivot' ? 'completely reimagined our business model around our core strengths' : 'brought in someone who could transform our engineering culture'}.
-
-The big opportunity here is to ${scenario?.id === 'fundraising' ? 'position ourselves as the category leader' : scenario?.id === 'product' ? 'create a product that inspires genuine excitement' : scenario?.id === 'pivot' ? 'find a more scalable model with better unit economics' : 'build a world-class engineering team that attracts top talent'}.
-
-What's your vision for how this could play out in the best-case scenario?`;
-      } else if (style?.id === 'pragmatic') {
-        responseContent = `Let's focus on what's practical here. We need to be realistic about ${scenario?.id === 'fundraising' ? 'our valuation expectations in the current market' : scenario?.id === 'product' ? 'what we can actually deliver with our current team' : scenario?.id === 'pivot' ? 'how much runway we have to experiment with new directions' : 'the immediate skills gap we need to fill'}.
-
-I suggest we ${scenario?.id === 'fundraising' ? 'prepare for a longer fundraising process than we initially planned' : scenario?.id === 'product' ? 'break down the roadmap into smaller, achievable milestones' : scenario?.id === 'pivot' ? 'run a small-scale test of the new model before fully committing' : 'prioritize candidates who can start immediately and deliver results'}.
-
-What concrete steps do you think we should take in the next 30 days?`;
-      } else {
-        responseContent = `I want to challenge our thinking here. Have we considered that ${scenario?.id === 'fundraising' ? 'raising too much money could actually harm our discipline and focus' : scenario?.id === 'product' ? 'users might not actually want the features we think they need' : scenario?.id === 'pivot' ? 'our current model might still work if we addressed the core issues' : 'neither candidate might be right for our current stage'}.
-
-We should question our assumptions about ${scenario?.id === 'fundraising' ? 'needing venture capital at all' : scenario?.id === 'product' ? 'what\'s driving our product decisions' : scenario?.id === 'pivot' ? 'whether our core assumptions about the market are correct' : 'what type of leadership we really need at this stage'}.
-
-What potential downsides do you see that we might be overlooking?`;
+      if (!scenario) {
+        throw new Error('No scenario selected');
       }
 
+      // Pass conversation history to maintain context
+      const conversationHistory = messages.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'assistant' as const,
+        content: msg.content
+      }));
+
+      const responseContent = await simulateCofounder(
+        userMessage,
+        selectedStyle as keyof any,
+        scenario.title,
+        conversationHistory
+      );
+      
       setMessages(prev => [...prev, { role: 'cofounder', content: responseContent }]);
+    } catch (error) {
+      console.error('Error getting co-founder response:', error);
+      setError('Failed to get co-founder response. Please try again.');
+      setMessages(prev => [...prev, { 
+        role: 'cofounder', 
+        content: 'I apologize, but I encountered an error. Could you please rephrase your message?' 
+      }]);
+    } finally {
       setIsProcessing(false);
-    }, 2000);
+    }
   };
 
   // Render configuration form if not configured yet
@@ -175,7 +200,7 @@ What potential downsides do you see that we might be overlooking?`;
           </button>
           <div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Co-Founder Simulator</h2>
-            <p className="text-gray-600 dark:text-gray-300">Conversational AI for startup scenarios</p>
+            <p className="text-gray-600 dark:text-gray-300">Powered by Google Gemini</p>
           </div>
         </div>
         
@@ -188,7 +213,7 @@ What potential downsides do you see that we might be overlooking?`;
                 <h4 className="text-lg font-medium text-gray-800 dark:text-gray-200 mb-3">
                   1. Select a Scenario
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {scenarios.map(scenario => (
                     <button
                       key={scenario.id}
@@ -229,13 +254,22 @@ What potential downsides do you see that we might be overlooking?`;
                           : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                       }`}
                     >
-                      <h5 className={`font-medium mb-1 ${
-                        selectedStyle === style.id 
-                          ? 'text-amber-700 dark:text-amber-400' 
-                          : 'text-gray-800 dark:text-gray-200'
-                      }`}>
-                        {style.name}
-                      </h5>
+                      <div className="flex items-center mb-2">
+                        <div className={`mr-2 ${
+                          selectedStyle === style.id 
+                            ? 'text-amber-600 dark:text-amber-400' 
+                            : 'text-gray-500 dark:text-gray-400'
+                        }`}>
+                          {style.icon}
+                        </div>
+                        <h5 className={`font-medium ${
+                          selectedStyle === style.id 
+                            ? 'text-amber-700 dark:text-amber-400' 
+                            : 'text-gray-800 dark:text-gray-200'
+                        }`}>
+                          {style.name}
+                        </h5>
+                      </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400">
                         {style.description}
                       </p>
@@ -274,14 +308,26 @@ What potential downsides do you see that we might be overlooking?`;
         >
           <ArrowLeft size={20} className="text-gray-600 dark:text-gray-300" />
         </button>
-        <div>
+        <div className="flex-1">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Co-Founder Simulator</h2>
-          <p className="text-gray-600 dark:text-gray-300">
-            {scenarios.find(s => s.id === selectedScenario)?.title} · 
-            {communicationStyles.find(s => s.id === selectedStyle)?.name} Style
-          </p>
+          <div className="flex items-center text-gray-600 dark:text-gray-300 text-sm">
+            <span>{scenarios.find(s => s.id === selectedScenario)?.title}</span>
+            <span className="mx-2">•</span>
+            <div className="flex items-center">
+              {communicationStyles.find(s => s.id === selectedStyle)?.icon}
+              <span className="ml-1">{communicationStyles.find(s => s.id === selectedStyle)?.name} Style</span>
+            </div>
+            <span className="mx-2">•</span>
+            <span className="text-xs">Powered by Gemini</span>
+          </div>
         </div>
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg">
+          <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+        </div>
+      )}
       
       <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto p-4">
@@ -302,6 +348,14 @@ What potential downsides do you see that we might be overlooking?`;
                 </div>
               </div>
             ))}
+            {isProcessing && (
+              <div className="flex justify-start">
+                <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 flex items-center">
+                  <Loader2 size={16} className="animate-spin mr-2 text-amber-500" />
+                  <span className="text-gray-600 dark:text-gray-300">Co-founder is thinking...</span>
+                </div>
+              </div>
+            )}
             <div ref={messageEndRef} />
           </div>
         </div>

@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { ArrowLeft, Mic, MicOff, Send, Loader2 } from 'lucide-react';
+import { mentorChat } from '../../lib/genai';
 
 type AIMentorBotProps = {
   onBack: () => void;
@@ -9,9 +10,10 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([
-    { role: 'assistant', content: 'Hello! I\'m your AI Mentor. How can I help you today?' }
+    { role: 'assistant', content: 'Hello! I\'m your AI Mentor powered by Gemini. I\'m here to help you learn, grow, and solve problems. What would you like to explore today?' }
   ]);
   const [inputText, setInputText] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -24,22 +26,23 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
   };
 
   const startRecording = () => {
-    // Simulated recording - would connect to Whisper API in a real implementation
+    // Simulated recording - in a real implementation, this would use Web Speech API
     setIsRecording(true);
+    setError(null);
   };
 
   const stopRecording = () => {
     setIsRecording(false);
     setIsProcessing(true);
     
-    // Simulate processing with the Whisper API
+    // Simulate speech recognition - in production, you'd use Web Speech API or send to speech service
     setTimeout(() => {
-      setInputText('How do I structure a machine learning project?');
+      setInputText('How can I improve my problem-solving skills?');
       setIsProcessing(false);
     }, 1500);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!inputText.trim() || isProcessing) return;
@@ -48,32 +51,30 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setInputText('');
     setIsProcessing(true);
+    setError(null);
 
-    // Simulated AI response - would connect to GPT-4 API in a real implementation
-    setTimeout(() => {
-      const responseContent = `For structuring a machine learning project, I recommend following these key steps:
-
-1. Define your problem and objectives clearly
-2. Collect and prepare your data (cleaning, normalization)
-3. Perform exploratory data analysis
-4. Select appropriate models and features
-5. Train your models and tune hyperparameters
-6. Evaluate model performance with appropriate metrics
-7. Deploy and monitor your model in production
-
-Would you like me to elaborate on any specific step?`;
-
-      setMessages(prev => [...prev, { role: 'assistant', content: responseContent }]);
-      setIsProcessing(false);
+    try {
+      // Call the actual Gemini API
+      const responseContent = await mentorChat(userMessage);
       
-      // Simulate text-to-speech with Coqui TTS
-      // In a real implementation, this would call the /speak endpoint
+      setMessages(prev => [...prev, { role: 'assistant', content: responseContent }]);
+      
+      // Simulate text-to-speech - in production, you'd use Web Speech API or a TTS service
       if (audioRef.current) {
         audioRef.current.play().catch(error => {
           console.error('Failed to play audio:', error);
         });
       }
-    }, 2000);
+    } catch (error) {
+      console.error('Error getting mentor response:', error);
+      setError('Sorry, I encountered an error. Please try again.');
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: 'I apologize, but I encountered an error processing your request. Please try again.' 
+      }]);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Scroll to bottom when messages change
@@ -93,9 +94,15 @@ Would you like me to elaborate on any specific step?`;
         </button>
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">AI Mentor Bot</h2>
-          <p className="text-gray-600 dark:text-gray-300">Voice-interactive learning assistant</p>
+          <p className="text-gray-600 dark:text-gray-300">Powered by Google Gemini</p>
         </div>
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg">
+          <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+        </div>
+      )}
 
       {/* Hidden audio element for TTS playback */}
       <audio ref={audioRef} src="https://audio-samples.github.io/samples/mp3/blizzard_biased/sample-1.mp3" />
@@ -144,7 +151,7 @@ Would you like me to elaborate on any specific step?`;
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               disabled={isProcessing || isRecording}
-              placeholder="Type your message or use voice input..."
+              placeholder="Ask me anything about learning, technology, business, or personal growth..."
               className="flex-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg py-2 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
             />
             

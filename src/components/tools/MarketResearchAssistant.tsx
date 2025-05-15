@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Search, FileText, BarChart, Loader2 } from 'lucide-react';
+import { ArrowLeft, Search, FileText, BarChart, Loader2, TrendingUp } from 'lucide-react';
+import { searchAndAnalyzeMarket } from '../../lib/genai';
 
 type ResearchResult = {
   title: string;
@@ -10,6 +11,7 @@ type ResearchResult = {
 type AnalysisResult = {
   trends: string[];
   insights: string;
+  recommendations: string[];
   charts: {
     title: string;
     type: 'bar' | 'line';
@@ -29,84 +31,89 @@ export const MarketResearchAssistant: React.FC<MarketResearchAssistantProps> = (
   const [searchResults, setSearchResults] = useState<ResearchResult[] | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [activeTab, setActiveTab] = useState<'search' | 'analysis'>('search');
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim() || isSearching) return;
     
     setIsSearching(true);
     setSearchResults(null);
     setAnalysisResult(null);
+    setError(null);
     
-    // Simulated search results - would connect to SerpAPI/Bing API in a real implementation
-    setTimeout(() => {
-      const mockResults: ResearchResult[] = [
-        {
-          title: "AI Market Trends 2025: Growth and Innovation",
-          source: "techinsights.com",
-          summary: "The AI market is projected to grow by 35% in 2025, with significant investments in natural language processing and computer vision technologies. Enterprise adoption continues to accelerate across healthcare, finance, and manufacturing sectors."
-        },
-        {
-          title: "Machine Learning Applications in Healthcare",
-          source: "healthtech-journal.org",
-          summary: "Healthcare providers are increasingly implementing ML solutions for diagnostic assistance, patient monitoring, and treatment optimization. Research shows a 28% improvement in early disease detection when AI assists medical professionals."
-        },
-        {
-          title: "Competitive Analysis: Top AI Solution Providers",
-          source: "industry-analyst.com",
-          summary: "The leading AI solution providers are focusing on vertical-specific offerings rather than general-purpose tools. Companies with industry-tailored solutions are seeing 3x faster customer acquisition rates compared to those with broader offerings."
-        }
-      ];
+    try {
+      // Call the actual Gemini API for market research
+      const result = await searchAndAnalyzeMarket(query);
       
-      setSearchResults(mockResults);
-      setIsSearching(false);
+      setSearchResults(result.searchResults);
+      
+      // Generate mock charts based on the query topic
+      const mockCharts = generateMockCharts(query);
+      
+      setAnalysisResult({
+        trends: result.analysis.trends,
+        insights: result.analysis.insights,
+        recommendations: result.analysis.recommendations,
+        charts: mockCharts
+      });
+      
       setActiveTab('search');
-    }, 2000);
+    } catch (error) {
+      console.error('Error in market research:', error);
+      setError('Failed to search and analyze market data. Please try again.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const generateMockCharts = (query: string) => {
+    // Generate contextual chart data based on the query
+    const charts = [];
+    
+    if (query.toLowerCase().includes('ai') || query.toLowerCase().includes('artificial intelligence')) {
+      charts.push({
+        title: "AI Market Growth by Sector",
+        type: "bar" as const,
+        labels: ["Healthcare", "Finance", "Manufacturing", "Retail", "Education"],
+        data: [42, 38, 35, 28, 22]
+      });
+      charts.push({
+        title: "AI Investment Focus Areas",
+        type: "bar" as const,
+        labels: ["NLP", "Computer Vision", "Predictive Analytics", "Generative AI", "Robotics"],
+        data: [35, 30, 25, 22, 18]
+      });
+    } else if (query.toLowerCase().includes('saas') || query.toLowerCase().includes('software')) {
+      charts.push({
+        title: "SaaS Market Segments",
+        type: "bar" as const,
+        labels: ["CRM", "Project Management", "Accounting", "HR", "Marketing"],
+        data: [28, 24, 22, 20, 18]
+      });
+    } else {
+      charts.push({
+        title: "Market Growth by Region",
+        type: "bar" as const,
+        labels: ["North America", "Europe", "Asia-Pacific", "Latin America", "MEA"],
+        data: [35, 28, 25, 18, 14]
+      });
+    }
+    
+    return charts;
   };
 
   const handleAnalyze = () => {
-    if (!searchResults || isAnalyzing) return;
-    
-    setIsAnalyzing(true);
-    
-    // Simulated analysis results - would connect to GPT-4 API in a real implementation
-    setTimeout(() => {
-      const mockAnalysis: AnalysisResult = {
-        trends: [
-          "Vertical-specific AI solutions outperforming general-purpose tools",
-          "Healthcare seeing rapid AI adoption for diagnostics and monitoring",
-          "35% projected market growth in 2025",
-          "NLP and computer vision leading investment areas"
-        ],
-        insights: "The AI market is shifting toward specialized, industry-specific solutions rather than general AI platforms. Healthcare applications are showing particularly strong ROI with measurable improvements in diagnostic accuracy. For new entrants, focusing on vertical-specific offerings with clear metrics for success appears to be the optimal strategy based on current market conditions.",
-        charts: [
-          {
-            title: "AI Growth by Sector (2025 Projections)",
-            type: "bar",
-            labels: ["Healthcare", "Finance", "Manufacturing", "Retail", "Education"],
-            data: [42, 38, 35, 28, 22]
-          },
-          {
-            title: "Technology Investment Focus",
-            type: "bar",
-            labels: ["NLP", "Computer Vision", "Predictive Analytics", "Generative AI", "Robotics"],
-            data: [35, 30, 25, 22, 18]
-          }
-        ]
-      };
-      
-      setAnalysisResult(mockAnalysis);
-      setIsAnalyzing(false);
-      setActiveTab('analysis');
-    }, 3000);
+    setActiveTab('analysis');
   };
 
   const renderSearchResults = () => {
     if (isSearching) {
       return (
         <div className="flex flex-col items-center justify-center py-12">
-          <Loader2 size={40} className="text-indigo-500 animate-spin mb-4" />
-          <p className="text-gray-600 dark:text-gray-300">Searching for "{query}"...</p>
+          <Loader2 size={40} className="text-teal-500 animate-spin mb-4" />
+          <p className="text-gray-600 dark:text-gray-300">Searching and analyzing "{query}"...</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Powered by Google Gemini</p>
         </div>
       );
     }
@@ -121,6 +128,9 @@ export const MarketResearchAssistant: React.FC<MarketResearchAssistantProps> = (
           <p className="text-gray-500 dark:text-gray-400 max-w-md">
             Search for market trends, competitive intelligence, or industry insights
           </p>
+          <div className="mt-4 text-xs text-gray-400">
+            Powered by Google Gemini AI
+          </div>
         </div>
       );
     }
@@ -129,24 +139,15 @@ export const MarketResearchAssistant: React.FC<MarketResearchAssistantProps> = (
       <div>
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-            Results for "{query}"
+            Research Results for "{query}"
           </h3>
           <button
             onClick={handleAnalyze}
             disabled={isAnalyzing}
             className="flex items-center px-3 py-1.5 bg-teal-500 text-white rounded-lg hover:bg-teal-600 disabled:opacity-50 transition-colors text-sm"
           >
-            {isAnalyzing ? (
-              <>
-                <Loader2 size={16} className="animate-spin mr-2" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <BarChart size={16} className="mr-2" />
-                Analyze Results
-              </>
-            )}
+            <BarChart size={16} className="mr-2" />
+            View Analysis
           </button>
         </div>
         
@@ -170,15 +171,6 @@ export const MarketResearchAssistant: React.FC<MarketResearchAssistantProps> = (
   };
 
   const renderAnalysisResults = () => {
-    if (isAnalyzing) {
-      return (
-        <div className="flex flex-col items-center justify-center py-12">
-          <Loader2 size={40} className="text-teal-500 animate-spin mb-4" />
-          <p className="text-gray-600 dark:text-gray-300">Analyzing research data...</p>
-        </div>
-      );
-    }
-    
     if (!analysisResult) {
       return (
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -187,7 +179,7 @@ export const MarketResearchAssistant: React.FC<MarketResearchAssistantProps> = (
             No analysis available yet
           </h3>
           <p className="text-gray-500 dark:text-gray-400 max-w-md">
-            Search for market data and analyze the results to see insights here
+            Search for market data first to see insights and analysis here
           </p>
         </div>
       );
@@ -196,7 +188,8 @@ export const MarketResearchAssistant: React.FC<MarketResearchAssistantProps> = (
     return (
       <div className="space-y-6">
         <div>
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center">
+            <TrendingUp size={20} className="mr-2 text-teal-500" />
             Key Trends
           </h3>
           <ul className="space-y-2">
@@ -211,18 +204,32 @@ export const MarketResearchAssistant: React.FC<MarketResearchAssistantProps> = (
         
         <div>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3">
-            Market Insights
+            Strategic Insights
           </h3>
           <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-            <p className="text-gray-600 dark:text-gray-300">
+            <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
               {analysisResult.insights}
             </p>
           </div>
         </div>
+
+        <div>
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3">
+            Recommendations
+          </h3>
+          <ul className="space-y-2">
+            {analysisResult.recommendations.map((recommendation, index) => (
+              <li key={index} className="flex items-start">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mt-1.5 mr-2"></span>
+                <span className="text-gray-700 dark:text-gray-300">{recommendation}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
         
         <div>
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3">
-            Data Visualization
+            Market Data Visualization
           </h3>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {analysisResult.charts.map((chart, index) => (
@@ -250,6 +257,10 @@ export const MarketResearchAssistant: React.FC<MarketResearchAssistantProps> = (
             ))}
           </div>
         </div>
+
+        <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+          Analysis powered by Google Gemini AI
+        </div>
       </div>
     );
   };
@@ -266,9 +277,15 @@ export const MarketResearchAssistant: React.FC<MarketResearchAssistantProps> = (
         </button>
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Market Research Assistant</h2>
-          <p className="text-gray-600 dark:text-gray-300">Multi-agent system for market insights</p>
+          <p className="text-gray-600 dark:text-gray-300">Powered by Google Gemini</p>
         </div>
       </div>
+      
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg">
+          <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+        </div>
+      )}
       
       <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
@@ -310,12 +327,12 @@ export const MarketResearchAssistant: React.FC<MarketResearchAssistantProps> = (
             </button>
             <button
               onClick={() => setActiveTab('analysis')}
-              disabled={!analysisResult && !isAnalyzing}
+              disabled={!analysisResult}
               className={`px-4 py-2 text-sm font-medium flex items-center ${
                 activeTab === 'analysis'
                   ? 'border-b-2 border-teal-500 text-teal-600 dark:text-teal-400'
                   : 'text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100'
-              } ${(!analysisResult && !isAnalyzing) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${!analysisResult ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <BarChart size={16} className="mr-2" /> 
               Analysis
