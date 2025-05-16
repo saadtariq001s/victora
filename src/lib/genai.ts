@@ -15,7 +15,7 @@ const cofounderHistories: Record<string, Array<{ role: 'user' | 'model'; parts: 
 // AI Mentor Bot Implementation
 export const mentorChat = async (message: string): Promise<string> => {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     const systemPrompt = `You are an expert AI mentor and learning assistant with deep expertise in technology, business, science, and personal development.
 
@@ -92,7 +92,7 @@ export const searchAndAnalyzeMarket = async (query: string): Promise<{
   };
 }> => {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     const prompt = `You are a senior market research analyst with expertise in industry trend analysis, competitive landscape assessment, and strategic recommendations.
 
@@ -161,7 +161,7 @@ export const simulateCofounder = async (
   opportunities?: string[];
 }> => {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     const systemPrompts = {
       analytical: `You are an analytical co-founder with a data-driven mindset. Your personality:
