@@ -7,10 +7,47 @@ type AIMentorBotProps = {
   onBack: () => void;
 };
 
+// Helper function to parse markdown and clean text for TTS
+const parseMarkdown = (text: string): { html: string; cleanText: string } => {
+  // Convert **bold** to <strong>bold</strong>
+  let html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // Convert *italic* to <em>italic</em>
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  
+  // Convert line breaks to <br>
+  html = html.replace(/\n/g, '<br>');
+  
+  // Create clean text for TTS (remove all markdown and clean up)
+  let cleanText = text
+    .replace(/\*\*(.*?)\*\*/g, '$1')  // Remove ** bold markers
+    .replace(/\*(.*?)\*/g, '$1')     // Remove * italic markers
+    .replace(/#{1,6}\s/g, '')        // Remove # headers
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // Remove links, keep text
+    .replace(/`([^`]+)`/g, '$1')     // Remove backticks
+    .replace(/\n{2,}/g, '. ')        // Replace multiple newlines with period
+    .replace(/\n/g, ' ')             // Replace single newlines with space
+    .trim();
+  
+  return { html, cleanText };
+};
+
+// Component to render parsed markdown
+const MarkdownMessage: React.FC<{ content: string }> = ({ content }) => {
+  const { html } = parseMarkdown(content);
+  return (
+    <div 
+      className="whitespace-pre-line"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+};
+
 export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isTTSProcessing, setIsTTSProcessing] = useState(false);
   const [isTTSEnabled, setIsTTSEnabled] = useState(true);
   const [selectedVoice, setSelectedVoice] = useState(CARTESIA_VOICES[0].id);
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
@@ -61,8 +98,9 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
     }
   };
 
+  // Optimized TTS function with faster processing
   const speakText = async (text: string) => {
-    if (!isTTSEnabled || isSpeaking || !audioCanPlay) {
+    if (!isTTSEnabled || isSpeaking || !audioCanPlay || isTTSProcessing) {
       if (!audioCanPlay && isTTSEnabled) {
         setDebugInfo('Audio not enabled - click Test Audio first');
       }
@@ -70,13 +108,19 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
     }
     
     try {
-      setIsSpeaking(true);
+      setIsTTSProcessing(true);
       setDebugInfo('Generating speech...');
       
-      const audioUrl = await cartesiaTTS.createAudioUrl(text, {
+      // Clean the text for TTS (remove markdown formatting)
+      const { cleanText } = parseMarkdown(text);
+      
+      // Use MP3 for faster processing and smaller file size
+      const audioUrl = await cartesiaTTS.createAudioUrl(cleanText, {
         voiceId: selectedVoice,
         outputFormat: 'mp3'
       });
+      
+      setIsTTSProcessing(false);
       
       if (audioRef.current) {
         // Clean up previous audio
@@ -84,11 +128,22 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
           URL.revokeObjectURL(audioRef.current.src);
         }
         
+        setIsSpeaking(true);
         audioRef.current.src = audioUrl;
         audioRef.current.volume = 1.0;
         
-        audioRef.current.onloadeddata = () => {
-          setDebugInfo('Audio loaded, starting playback...');
+        audioRef.current.onloadstart = () => {
+          setDebugInfo('Loading audio...');
+        };
+        
+        audioRef.current.oncanplaythrough = () => {
+          setDebugInfo('Audio ready, starting playback...');
+          audioRef.current?.play().catch(error => {
+            console.error('Play error:', error);
+            setIsSpeaking(false);
+            setDebugInfo('Play blocked - need user interaction');
+            setError('Audio blocked by browser. Click Test Audio to enable.');
+          });
         };
         
         audioRef.current.onplay = () => {
@@ -103,27 +158,21 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
         
         audioRef.current.onerror = (e) => {
           setIsSpeaking(false);
+          setIsTTSProcessing(false);
           setDebugInfo('Playback error');
           setError('Audio playback failed. Try the test button again.');
           URL.revokeObjectURL(audioUrl);
           console.error('Audio playback error:', e);
         };
         
-        // Try to play
-        try {
-          await audioRef.current.play();
-          setError(null);
-        } catch (playError) {
-          setDebugInfo('Play blocked - need user interaction');
-          setError('Audio blocked by browser. Click Test Audio to enable.');
-          console.error('Play error:', playError);
-          setIsSpeaking(false);
-          URL.revokeObjectURL(audioUrl);
-        }
+        // Preload the audio immediately
+        audioRef.current.preload = 'auto';
+        audioRef.current.load();
       }
     } catch (error) {
       console.error('TTS Error:', error);
       setIsSpeaking(false);
+      setIsTTSProcessing(false);
       setDebugInfo('TTS generation failed');
       setError(`Text-to-speech failed: ${error}`);
     }
@@ -177,21 +226,24 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
       
       setMessages(prev => [...prev, { role: 'assistant', content: responseContent }]);
       setDebugInfo('Response received');
+      setIsProcessing(false);
       
-      // Auto-speak the response if TTS is enabled
+      // Start TTS immediately after receiving response (no delay)
       if (isTTSEnabled && audioCanPlay) {
-        await speakText(responseContent);
+        // Small delay to ensure the message is rendered first
+        setTimeout(() => {
+          speakText(responseContent);
+        }, 100);
       }
     } catch (error) {
       console.error('Error getting mentor response:', error);
       setError('Sorry, I encountered an error. Please try again.');
       setDebugInfo('AI response error');
+      setIsProcessing(false);
       setMessages(prev => [...prev, { 
         role: 'assistant', 
         content: 'I apologize, but I encountered an error processing your request. Please try again or rephrase your question.' 
       }]);
-    } finally {
-      setIsProcessing(false);
     }
   };
 
@@ -205,6 +257,7 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
     ]);
     setError(null);
     setIsSpeaking(false);
+    setIsTTSProcessing(false);
     setDebugInfo('Conversation reset');
     if (audioRef.current) {
       audioRef.current.pause();
@@ -218,6 +271,7 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
       audioRef.current.currentTime = 0;
     }
     setIsSpeaking(false);
+    setIsTTSProcessing(false);
     setDebugInfo('Speech stopped');
   };
 
@@ -327,13 +381,13 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
           </button>
 
           {/* Stop Speaking Button */}
-          {isSpeaking && (
+          {(isSpeaking || isTTSProcessing) && (
             <button
               onClick={stopSpeaking}
               className="px-3 py-2 text-sm bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
               aria-label="Stop speaking"
             >
-              Stop
+              {isTTSProcessing ? 'Processing...' : 'Stop'}
             </button>
           )}
 
@@ -373,15 +427,19 @@ export const AIMentorBot: React.FC<AIMentorBotProps> = ({ onBack }) => {
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
                   }`}
                 >
-                  <p className="whitespace-pre-line">{message.content}</p>
+                  {message.role === 'user' ? (
+                    <p className="whitespace-pre-line">{message.content}</p>
+                  ) : (
+                    <MarkdownMessage content={message.content} />
+                  )}
                   {message.role === 'assistant' && isTTSEnabled && audioCanPlay && (
                     <button
                       onClick={() => speakText(message.content)}
-                      disabled={isSpeaking}
+                      disabled={isSpeaking || isTTSProcessing}
                       className="mt-2 text-xs text-gray-500 dark:text-gray-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-colors flex items-center"
                     >
                       <Volume2 size={12} className="mr-1" />
-                      {isSpeaking ? 'Speaking...' : 'Replay'}
+                      {isTTSProcessing ? 'Processing...' : isSpeaking ? 'Speaking...' : 'Replay'}
                     </button>
                   )}
                 </div>

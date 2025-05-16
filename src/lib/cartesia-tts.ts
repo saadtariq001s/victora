@@ -1,7 +1,7 @@
 // src/lib/cartesia-tts.ts
 const CARTESIA_API_KEY = 'sk_car_M5d6t2Gs61L3aioCPmnQt6';
 const CARTESIA_API_URL = 'https://api.cartesia.ai/tts/bytes';
-const CARTESIA_VERSION = '2025-04-16'; // Required version header
+const CARTESIA_VERSION = '2024-06-30'; // Updated to the correct version
 
 interface CartesiaVoice {
   id: string;
@@ -46,11 +46,7 @@ export const CARTESIA_VOICES: CartesiaVoice[] = [
 
 interface TTSOptions {
   voiceId?: string;
-  outputFormat?: {
-    container: 'mp3' | 'wav' | 'flac';
-    encoding: string;
-    sampleRate: number;
-  };
+  outputFormat?: 'mp3' | 'wav';
 }
 
 export class CartesiaTTS {
@@ -71,11 +67,7 @@ export class CartesiaTTS {
   async textToSpeech(text: string, options: TTSOptions = {}): Promise<Blob> {
     const {
       voiceId = CARTESIA_VOICES[0].id,
-      outputFormat = {
-        container: 'wav',
-        encoding: 'pcm_f32le',
-        sampleRate: 44100
-      }
+      outputFormat = 'mp3'
     } = options;
 
     try {
@@ -83,15 +75,19 @@ export class CartesiaTTS {
       console.log('Text:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
       console.log('Voice ID:', voiceId);
 
-      // Format the request body exactly like the working Node.js example
+      // Fix the request body to match Cartesia API expectations
       const requestBody = {
-        modelId: 'sonic-2', // Use the correct model ID
+        model_id: 'sonic-english', // Fixed: use correct model
+        transcript: text,
         voice: {
           mode: 'id',
           id: voiceId
         },
-        outputFormat: outputFormat,
-        transcript: text
+        output_format: {
+          container: outputFormat,
+          encoding: outputFormat === 'mp3' ? 'mp3' : 'pcm_f32le',
+          sample_rate: 44100
+        }
       };
 
       console.log('Request body:', JSON.stringify(requestBody, null, 2));
@@ -100,7 +96,7 @@ export class CartesiaTTS {
         method: 'POST',
         headers: {
           'X-API-Key': this.apiKey,
-          'Cartesia-Version': CARTESIA_VERSION, // Required version header
+          'Cartesia-Version': CARTESIA_VERSION,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody)
@@ -120,15 +116,6 @@ export class CartesiaTTS {
       
       if (audioBlob.size === 0) {
         throw new Error('Received empty audio blob from Cartesia');
-      }
-      
-      // Verify it's actually audio or binary data
-      if (!audioBlob.type.startsWith('audio/') && !audioBlob.type.includes('application/octet-stream')) {
-        console.warn('Response might not be audio:', audioBlob.type);
-        // Try to read as text to see error message
-        const text = await audioBlob.text();
-        console.error('Non-audio response:', text);
-        throw new Error('Received non-audio response from Cartesia API');
       }
       
       return audioBlob;
@@ -152,17 +139,7 @@ export class CartesiaTTS {
    * @returns Promise<string> - Object URL that can be used as audio src
    */
   async createAudioUrl(text: string, options: TTSOptions = {}): Promise<string> {
-    // For web audio, use MP3 format with appropriate encoding
-    const webOptions = {
-      ...options,
-      outputFormat: {
-        container: 'wav' as const,
-        encoding: 'pcm_f32le',
-        sampleRate: 44100
-      }
-    };
-    
-    const audioBlob = await this.textToSpeech(text, webOptions);
+    const audioBlob = await this.textToSpeech(text, options);
     return URL.createObjectURL(audioBlob);
   }
 
