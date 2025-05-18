@@ -56,7 +56,7 @@ export const AIToolsDashboard: React.FC<AIToolsDashboardProps> = ({
     <div className="space-y-8">
       <div className="text-center max-w-3xl mx-auto">
         <h2 className="text-3xl font-bold text-gray-900 dark:text-white sm:text-4xl mb-4">
-          Advanced AI Tools Suite
+          Elevate Your Startup Journey with AI
         </h2>
         <p className="text-lg text-gray-600 dark:text-gray-300">
           Explore our collection of state-of-the-art AI tools designed to enhance productivity, 
@@ -74,7 +74,7 @@ export const AIToolsDashboard: React.FC<AIToolsDashboardProps> = ({
         ))}
       </div>
       
-      <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+      {/* <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
         <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
           Technical Implementation
         </h3>
@@ -107,7 +107,7 @@ export const AIToolsDashboard: React.FC<AIToolsDashboardProps> = ({
             <span>Public testing (ngrok)</span>
           </li>
         </ul>
-      </div>
+      </div> */}
     </div>
   );
 };

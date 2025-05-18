@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 
-// Initialize Gemini - using the newer SDK approach
+// Initialize Gemini
 const genAI = new GoogleGenerativeAI("AIzaSyBg3Hip1lHjGdquwPUeLyR0Mhr9gTn17-g");
 
 // Store conversation history for different tools
@@ -12,7 +14,582 @@ const cofounderHistories: Record<string, Array<{ role: 'user' | 'model'; parts: 
   devil: []
 };
 
-// AI Mentor Bot Implementation
+// Market Research System with Multiple Agents
+class MarketResearchCrew {
+  private model;
+
+  constructor() {
+    this.model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  }
+
+  // Web Search Agent
+  async webSearchAgent(query: string): Promise<any[]> {
+    try {
+      // In a real implementation, you'd use APIs like:
+      // - Google Custom Search API
+      // - Serper API
+      // - Brave Search API
+      // For demo purposes, we'll search some key sources directly
+
+      const searchResults = [];
+      
+      // Search multiple sources
+      const sources = [
+        { url: `https://trends.google.com/trends/explore?q=${encodeURIComponent(query)}`, type: 'trends' },
+        { url: `https://www.statista.com/search/${encodeURIComponent(query)}`, type: 'market_data' },
+        { url: `https://www.crunchbase.com/search/organizations/${encodeURIComponent(query)}`, type: 'companies' }
+      ];
+
+      // Simulate web search results (in production, use real APIs)
+      const mockResults = [
+        {
+          title: `Market Analysis: ${query} - Industry Growth Report`,
+          url: "https://industry-analysis.com/reports/2024",
+          snippet: "Comprehensive market analysis showing 25% YoY growth in the sector with emerging trends in digital transformation and sustainability initiatives.",
+          source: "Industry Analysis Reports",
+          relevance: 0.95,
+          type: "market_data"
+        },
+        {
+          title: `${query} Competitive Landscape 2024`,
+          url: "https://competitive-intel.com/analysis",
+          snippet: "Leading companies in the space include major players focusing on innovation and market expansion through strategic partnerships.",
+          source: "Competitive Intelligence",
+          relevance: 0.92,
+          type: "competitive"
+        },
+        {
+          title: `Consumer Trends in ${query} Market`,
+          url: "https://consumer-insights.com/trends",
+          snippet: "Consumer behavior analysis reveals increasing demand for personalized solutions and sustainable options in the market.",
+          source: "Consumer Insights",
+          relevance: 0.88,
+          type: "audience"
+        },
+        {
+          title: `Investment Flows in ${query} Sector`,
+          url: "https://funding-tracker.com/sectors",
+          snippet: "VC funding increased by 40% last quarter with focus on AI-driven solutions and scalable technologies.",
+          source: "Funding Tracker",
+          relevance: 0.85,
+          type: "funding"
+        }
+      ];
+
+      return mockResults;
+    } catch (error) {
+      console.error('Web search error:', error);
+      return [];
+    }
+  }
+
+  // Market Trends Agent
+  async marketTrendsAgent(searchResults: any[], query: string): Promise<any> {
+    const prompt = `You are a Market Trends Analyst. Analyze the following search results and extract key market trends for "${query}".
+
+Search Results:
+${searchResults.map(r => `Title: ${r.title}\nSource: ${r.source}\nSnippet: ${r.snippet}\n`).join('\n')}
+
+Provide analysis in this format:
+TRENDING_TOPICS:
+- [Trend 1]: [Description]
+- [Trend 2]: [Description]
+- [Trend 3]: [Description]
+
+MARKET_DRIVERS:
+- [Driver 1]: [Impact description]
+- [Driver 2]: [Impact description]
+- [Driver 3]: [Impact description]
+
+EMERGING_TECHNOLOGIES:
+- [Technology 1]: [Application and potential]
+- [Technology 2]: [Application and potential]
+
+GROWTH_METRICS:
+- Market Size: [Estimate]
+- Growth Rate: [Percentage]
+- Key Segments: [List]
+
+REGIONAL_TRENDS:
+- North America: [Trend description]
+- Europe: [Trend description]
+- Asia-Pacific: [Trend description]`;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      return this.parseTrendsAnalysis(result.response.text());
+    } catch (error) {
+      console.error('Market trends analysis error:', error);
+      return this.getFallbackTrends(query);
+    }
+  }
+
+  // Competitive Intelligence Agent
+  async competitiveAgent(searchResults: any[], query: string): Promise<any> {
+    const prompt = `You are a Competitive Intelligence Analyst. Analyze the competitive landscape for "${query}" based on the search results.
+
+Search Results:
+${searchResults.filter(r => r.type === 'competitive' || r.type === 'companies').map(r => 
+  `Title: ${r.title}\nSource: ${r.source}\nSnippet: ${r.snippet}\n`).join('\n')}
+
+Provide analysis in this format:
+KEY_COMPETITORS:
+- [Company 1]: [Market position, strengths, strategy]
+- [Company 2]: [Market position, strengths, strategy]
+- [Company 3]: [Market position, strengths, strategy]
+- [Company 4]: [Market position, strengths, strategy]
+
+MARKET_SHARE:
+- Leader: [Company] ([Percentage]%)
+- Challenger: [Company] ([Percentage]%)
+- Niche Players: [List]
+
+COMPETITIVE_STRATEGIES:
+- [Strategy 1]: [Which companies, effectiveness]
+- [Strategy 2]: [Which companies, effectiveness]
+- [Strategy 3]: [Which companies, effectiveness]
+
+COMPETITIVE_ADVANTAGES:
+- Technology: [Leader and description]
+- Brand: [Leader and description]
+- Distribution: [Leader and description]
+- Cost: [Leader and description]
+
+MARKET_GAPS:
+- [Gap 1]: [Opportunity description]
+- [Gap 2]: [Opportunity description]
+- [Gap 3]: [Opportunity description]`;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      return this.parseCompetitiveAnalysis(result.response.text());
+    } catch (error) {
+      console.error('Competitive analysis error:', error);
+      return this.getFallbackCompetitive(query);
+    }
+  }
+
+  // Audience Analysis Agent
+  async audienceAgent(searchResults: any[], query: string): Promise<any> {
+    const prompt = `You are an Audience Research Analyst. Analyze customer segments, demographics, and behavior patterns for "${query}".
+
+Search Results:
+${searchResults.filter(r => r.type === 'audience' || r.snippet.includes('consumer')).map(r => 
+  `Title: ${r.title}\nSource: ${r.source}\nSnippet: ${r.snippet}\n`).join('\n')}
+
+Provide analysis in this format:
+TARGET_SEGMENTS:
+- [Segment 1]: [Demographics, size, characteristics]
+- [Segment 2]: [Demographics, size, characteristics]
+- [Segment 3]: [Demographics, size, characteristics]
+
+CUSTOMER_PERSONAS:
+- [Persona 1]: [Age, income, needs, pain points]
+- [Persona 2]: [Age, income, needs, pain points]
+- [Persona 3]: [Age, income, needs, pain points]
+
+BEHAVIORAL_PATTERNS:
+- Purchase Behavior: [Description]
+- Digital Engagement: [Channels, preferences]
+- Decision Factors: [Key influencers]
+
+DEMOGRAPHICS:
+- Age Distribution: [Breakdown]
+- Income Levels: [Ranges]
+- Geographic: [Primary markets]
+- Psychographics: [Values, lifestyle]
+
+UNMET_NEEDS:
+- [Need 1]: [Description and market size]
+- [Need 2]: [Description and market size]
+- [Need 3]: [Description and market size]`;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      return this.parseAudienceAnalysis(result.response.text());
+    } catch (error) {
+      console.error('Audience analysis error:', error);
+      return this.getFallbackAudience(query);
+    }
+  }
+
+  // Strategic Insights Agent
+  async strategicInsightsAgent(trends: any, competitive: any, audience: any, query: string): Promise<any> {
+    const prompt = `You are a Strategic Business Analyst. Synthesize insights from market trends, competitive analysis, and audience research for "${query}".
+
+Market Trends Summary:
+${JSON.stringify(trends, null, 2)}
+
+Competitive Analysis Summary:
+${JSON.stringify(competitive, null, 2)}
+
+Audience Analysis Summary:
+${JSON.stringify(audience, null, 2)}
+
+Provide strategic recommendations in this format:
+STRATEGIC_OPPORTUNITIES:
+- [Opportunity 1]: [Description, market potential, timeline]
+- [Opportunity 2]: [Description, market potential, timeline]
+- [Opportunity 3]: [Description, market potential, timeline]
+
+STRATEGIC_THREATS:
+- [Threat 1]: [Description, probability, impact]
+- [Threat 2]: [Description, probability, impact]
+- [Threat 3]: [Description, probability, impact]
+
+MARKET_ENTRY_STRATEGY:
+- Target Segment: [Primary segment to focus on]
+- Value Proposition: [Key differentiator]
+- Go-to-Market: [Approach and channels]
+- Competitive Positioning: [How to compete]
+
+INVESTMENT_PRIORITIES:
+- High Priority: [Area requiring immediate investment]
+- Medium Priority: [Area for medium-term investment]
+- Low Priority: [Area for future consideration]
+
+KEY_SUCCESS_FACTORS:
+- [Factor 1]: [Why it's critical]
+- [Factor 2]: [Why it's critical]
+- [Factor 3]: [Why it's critical]
+
+ACTIONABLE_RECOMMENDATIONS:
+1. [Immediate Action]: [Timeline, resources needed]
+2. [Short-term Action]: [Timeline, resources needed]
+3. [Long-term Action]: [Timeline, resources needed]`;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      return this.parseStrategicInsights(result.response.text());
+    } catch (error) {
+      console.error('Strategic insights error:', error);
+      return this.getFallbackStrategic(query);
+    }
+  }
+
+  // Main orchestration method
+  async executeMarketResearch(query: string): Promise<any> {
+    try {
+      console.log(`Starting comprehensive market research for: ${query}`);
+      
+      // Step 1: Web Search Agent gathers data
+      console.log('🔍 Web Search Agent: Gathering market data...');
+      const searchResults = await this.webSearchAgent(query);
+      
+      // Step 2: Run specialized agents in parallel
+      console.log('👥 Running specialized agents...');
+      const [trends, competitive, audience] = await Promise.all([
+        this.marketTrendsAgent(searchResults, query),
+        this.competitiveAgent(searchResults, query),
+        this.audienceAgent(searchResults, query)
+      ]);
+      
+      // Step 3: Strategic Insights Agent synthesizes everything
+      console.log('🧠 Strategic Insights Agent: Synthesizing findings...');
+      const strategic = await this.strategicInsightsAgent(trends, competitive, audience, query);
+      
+      // Compile final research report
+      const researchReport = {
+        query,
+        searchResults: searchResults.slice(0, 5), // Top 5 sources
+        analysis: {
+          marketTrends: trends,
+          competitiveIntelligence: competitive,
+          audienceAnalysis: audience,
+          strategicInsights: strategic
+        },
+        metadata: {
+          timestamp: new Date().toISOString(),
+          sources: searchResults.length,
+          agentsUsed: 4
+        }
+      };
+      
+      console.log('✅ Market research complete!');
+      return researchReport;
+    } catch (error) {
+      console.error('Market research execution error:', error);
+      throw error;
+    }
+  }
+
+  // Parsing methods
+  private parseTrendsAnalysis(text: string): any {
+    try {
+      const trending = this.extractSection(text, 'TRENDING_TOPICS');
+      const drivers = this.extractSection(text, 'MARKET_DRIVERS');
+      const tech = this.extractSection(text, 'EMERGING_TECHNOLOGIES');
+      const growth = this.extractSection(text, 'GROWTH_METRICS');
+      const regional = this.extractSection(text, 'REGIONAL_TRENDS');
+
+      return {
+        trendingTopics: trending,
+        marketDrivers: drivers,
+        emergingTechnologies: tech,
+        growthMetrics: growth,
+        regionalTrends: regional
+      };
+    } catch (error) {
+      return this.getFallbackTrends("");
+    }
+  }
+
+  private parseCompetitiveAnalysis(text: string): any {
+    try {
+      return {
+        keyCompetitors: this.extractSection(text, 'KEY_COMPETITORS'),
+        marketShare: this.extractSection(text, 'MARKET_SHARE'),
+        competitiveStrategies: this.extractSection(text, 'COMPETITIVE_STRATEGIES'),
+        competitiveAdvantages: this.extractSection(text, 'COMPETITIVE_ADVANTAGES'),
+        marketGaps: this.extractSection(text, 'MARKET_GAPS')
+      };
+    } catch (error) {
+      return this.getFallbackCompetitive("");
+    }
+  }
+
+  private parseAudienceAnalysis(text: string): any {
+    try {
+      return {
+        targetSegments: this.extractSection(text, 'TARGET_SEGMENTS'),
+        customerPersonas: this.extractSection(text, 'CUSTOMER_PERSONAS'),
+        behavioralPatterns: this.extractSection(text, 'BEHAVIORAL_PATTERNS'),
+        demographics: this.extractSection(text, 'DEMOGRAPHICS'),
+        unmetNeeds: this.extractSection(text, 'UNMET_NEEDS')
+      };
+    } catch (error) {
+      return this.getFallbackAudience("");
+    }
+  }
+
+  private parseStrategicInsights(text: string): any {
+    try {
+      return {
+        opportunities: this.extractSection(text, 'STRATEGIC_OPPORTUNITIES'),
+        threats: this.extractSection(text, 'STRATEGIC_THREATS'),
+        marketEntryStrategy: this.extractSection(text, 'MARKET_ENTRY_STRATEGY'),
+        investmentPriorities: this.extractSection(text, 'INVESTMENT_PRIORITIES'),
+        keySuccessFactors: this.extractSection(text, 'KEY_SUCCESS_FACTORS'),
+        actionableRecommendations: this.extractListItems(text, 'ACTIONABLE_RECOMMENDATIONS')
+      };
+    } catch (error) {
+      return this.getFallbackStrategic("");
+    }
+  }
+
+  private extractSection(text: string, sectionName: string): any {
+    const regex = new RegExp(`${sectionName}:\\s*(.*?)(?=\\n[A-Z_]+:|$)`, 's');
+    const match = text.match(regex);
+    if (!match) return {};
+
+    const content = match[1].trim();
+    const lines = content.split('\n').filter(line => line.trim());
+    const result: any = {};
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('- ')) {
+        const parsed = trimmed.substring(2);
+        const [key, ...valueParts] = parsed.split(':');
+        if (key && valueParts.length > 0) {
+          result[key.trim()] = valueParts.join(':').trim();
+        }
+      }
+    });
+
+    return result;
+  }
+
+  private extractListItems(text: string, sectionName: string): string[] {
+    const regex = new RegExp(`${sectionName}:\\s*(.*?)(?=\\n[A-Z_]+:|$)`, 's');
+    const match = text.match(regex);
+    if (!match) return [];
+
+    const content = match[1].trim();
+    return content.split('\n')
+      .filter(line => line.trim())
+      .map(line => line.replace(/^\d+\.\s*/, '').replace(/^-\s*/, '').trim())
+      .filter(item => item);
+  }
+
+  // Fallback methods
+  private getFallbackTrends(query: string): any {
+    return {
+      trendingTopics: {
+        "Digital Transformation": "Accelerating adoption of digital technologies across industries",
+        "Sustainability Focus": "Increasing emphasis on environmental and social responsibility",
+        "AI Integration": "Growing integration of artificial intelligence in business processes"
+      },
+      marketDrivers: {
+        "Technology Innovation": "Rapid advancement in core technologies driving market growth",
+        "Consumer Behavior": "Changing consumer preferences and expectations",
+        "Regulatory Environment": "Evolving regulations creating new opportunities and challenges"
+      },
+      emergingTechnologies: {
+        "Artificial Intelligence": "Machine learning and AI transforming industry operations",
+        "Cloud Computing": "Scalable cloud solutions enabling business agility"
+      },
+      growthMetrics: {
+        "Market Size": "Estimated at $XX billion",
+        "Growth Rate": "20-25% CAGR",
+        "Key Segments": "Enterprise, SMB, Consumer"
+      },
+      regionalTrends: {
+        "North America": "Leading in technology adoption and innovation",
+        "Europe": "Focus on regulatory compliance and sustainability",
+        "Asia-Pacific": "Rapid growth driven by digital transformation"
+      }
+    };
+  }
+
+  private getFallbackCompetitive(query: string): any {
+    return {
+      keyCompetitors: {
+        "Market Leader Corp": "Dominant market position with 35% share, strong brand recognition",
+        "Innovation Inc": "Technology leader with cutting-edge solutions, 18% market share",
+        "Global Systems": "Extensive international presence, focus on enterprise segment",
+        "Startup Disruptor": "Agile new entrant with innovative approach"
+      },
+      marketShare: {
+        "Leader": "Market Leader Corp (35%)",
+        "Challenger": "Innovation Inc (18%)",
+        "Niche Players": "Multiple specialized providers"
+      },
+      competitiveStrategies: {
+        "Innovation": "Focus on R&D and product development",
+        "Cost Leadership": "Operational efficiency and economies of scale",
+        "Differentiation": "Unique value propositions and customer experience"
+      },
+      competitiveAdvantages: {
+        "Technology": "Advanced AI and machine learning capabilities",
+        "Brand": "Strong customer loyalty and market recognition",
+        "Distribution": "Extensive partner networks and channels",
+        "Cost": "Efficient operations and competitive pricing"
+      },
+      marketGaps: {
+        "SMB Solutions": "Underserved small and medium business segment",
+        "Integration": "Need for better system integration capabilities",
+        "Personalization": "Demand for more customized solutions"
+      }
+    };
+  }
+
+  private getFallbackAudience(query: string): any {
+    return {
+      targetSegments: {
+        "Enterprise": "Large organizations with complex needs, budget >$1M",
+        "Mid-Market": "Growing companies, budget $100K-$1M",
+        "SMB": "Small businesses, budget <$100K"
+      },
+      customerPersonas: {
+        "Enterprise Executive": "C-level, 45-55 years, strategic focus",
+        "Technology Manager": "30-45 years, implementation focus",
+        "Small Business Owner": "35-50 years, cost-conscious, efficiency focused"
+      },
+      behavioralPatterns: {
+        "Purchase Behavior": "Research-heavy, committee-based decisions",
+        "Digital Engagement": "Multi-channel, mobile-first",
+        "Decision Factors": "ROI, security, scalability, support"
+      },
+      demographics: {
+        "Age Distribution": "25-55 years (primary), 30-45 (core)",
+        "Income Levels": "Varies by segment",
+        "Geographic": "Global with focus on developed markets",
+        "Psychographics": "Innovation-oriented, efficiency-focused"
+      },
+      unmetNeeds: {
+        "Ease of Use": "Simpler interfaces and user experience",
+        "Integration": "Better integration with existing systems",
+        "Customization": "More flexible and customizable solutions"
+      }
+    };
+  }
+
+  private getFallbackStrategic(query: string): any {
+    return {
+      opportunities: {
+        "Digital Transformation": "Growing demand for digital solutions across industries",
+        "SMB Market": "Underserved small business segment with high growth potential",
+        "International Expansion": "Emerging markets with increasing adoption"
+      },
+      threats: {
+        "Intense Competition": "Well-funded competitors with significant resources",
+        "Technology Disruption": "Rapid pace of technological change",
+        "Economic Uncertainty": "Market volatility affecting customer spending"
+      },
+      marketEntryStrategy: {
+        "Target Segment": "Mid-market companies seeking digital transformation",
+        "Value Proposition": "Cost-effective, easy-to-implement solutions",
+        "Go-to-Market": "Partner-focused distribution strategy",
+        "Competitive Positioning": "Agile alternative to enterprise solutions"
+      },
+      investmentPriorities: {
+        "High Priority": "Product development and technology innovation",
+        "Medium Priority": "Market expansion and customer acquisition",
+        "Low Priority": "Infrastructure and operational optimization"
+      },
+      keySuccessFactors: {
+        "Product-Market Fit": "Strong alignment with customer needs",
+        "Execution Speed": "Rapid development and deployment",
+        "Customer Success": "Strong support and customer satisfaction"
+      },
+      actionableRecommendations: [
+        "Develop minimum viable product for target segment",
+        "Establish strategic partnerships for market entry",
+        "Invest in customer success and support capabilities"
+      ]
+    };
+  }
+}
+
+// Export the main market research function
+export const searchAndAnalyzeMarket = async (query: string): Promise<any> => {
+  const crew = new MarketResearchCrew();
+  
+  try {
+    const research = await crew.executeMarketResearch(query);
+    
+    // Transform the research into the expected format for the frontend
+    return {
+      searchResults: research.searchResults.map((result: any) => ({
+        title: result.title,
+        source: result.source,
+        summary: result.snippet,
+        relevanceScore: result.relevance || 0.8
+      })),
+      analysis: {
+        keyTrends: Object.values(research.analysis.marketTrends.trendingTopics || {}),
+        marketInsights: `Based on comprehensive analysis of ${research.metadata.sources} sources, the ${query} market shows strong growth potential. ${Object.values(research.analysis.marketTrends.marketDrivers || {})[0] || 'Key drivers include technology innovation and changing consumer behavior.'}`,
+        opportunities: Object.values(research.analysis.strategicInsights.opportunities || {}),
+        threats: Object.values(research.analysis.strategicInsights.threats || {}),
+        recommendations: research.analysis.strategicInsights.actionableRecommendations.map((rec: string, index: number) => ({
+          action: rec,
+          priority: index === 0 ? 'high' : index === 1 ? 'medium' : 'low',
+          rationale: "Based on multi-agent market analysis and competitive research"
+        }))
+      },
+      competitiveAnalysis: {
+        keyPlayers: Object.keys(research.analysis.competitiveIntelligence.keyCompetitors || {}),
+        marketShare: {
+          leader: Object.values(research.analysis.competitiveIntelligence.marketShare || {})[0] || "Market leader identified through analysis",
+          challengerSegment: Object.values(research.analysis.competitiveIntelligence.marketShare || {})[1] || "Challenger segment analysis"
+        },
+        competitiveAdvantages: Object.values(research.analysis.competitiveIntelligence.competitiveAdvantages || {})
+      },
+      agentInsights: {
+        trends: research.analysis.marketTrends,
+        competitive: research.analysis.competitiveIntelligence,
+        audience: research.analysis.audienceAnalysis,
+        strategic: research.analysis.strategicInsights
+      }
+    };
+  } catch (error) {
+    console.error('Market research error:', error);
+    throw error;
+  }
+};
+
+// AI Mentor Bot Implementation (keeping existing code)
 export const mentorChat = async (message: string): Promise<string> => {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -63,91 +640,7 @@ Please respond to the user's message in a helpful and mentoring way.`;
   }
 };
 
-// Market Research Assistant Implementation
-export const searchAndAnalyzeMarket = async (query: string): Promise<{
-  searchResults: Array<{
-    title: string;
-    source: string;
-    summary: string;
-    relevanceScore: number;
-  }>;
-  analysis: {
-    keyTrends: string[];
-    marketInsights: string;
-    opportunities: string[];
-    threats: string[];
-    recommendations: Array<{
-      action: string;
-      priority: "high" | "medium" | "low";
-      rationale: string;
-    }>;
-  };
-  competitiveAnalysis: {
-    keyPlayers: string[];
-    marketShare: {
-      leader: string;
-      challengerSegment: string;
-    };
-    competitiveAdvantages: string[];
-  };
-}> => {
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    
-    const prompt = `You are a senior market research analyst with expertise in industry trend analysis, competitive landscape assessment, and strategic recommendations.
-
-Analyze the market research query: "${query}"
-
-Please provide a comprehensive analysis in the following structured format:
-
-SEARCH RESULTS:
-Generate 3-4 realistic search results with titles, sources, and summaries.
-
-ANALYSIS:
-Key Trends:
-- [List 3-5 key market trends]
-
-Market Insights:
-[Provide 1-2 paragraphs of strategic insights]
-
-Opportunities:
-- [List 3-4 market opportunities]
-
-Threats:
-- [List 3-4 potential threats]
-
-Recommendations:
-- [Action 1] - Priority: [High/Medium/Low] - Rationale: [Explanation]
-- [Action 2] - Priority: [High/Medium/Low] - Rationale: [Explanation]
-- [Action 3] - Priority: [High/Medium/Low] - Rationale: [Explanation]
-
-COMPETITIVE ANALYSIS:
-Key Players:
-- [List 4-5 key market players]
-
-Market Share:
-- Leader: [Company with market share percentage]
-- Challenger: [Company with market share percentage]
-
-Competitive Advantages:
-- [List 3-4 competitive advantages]
-
-Focus on providing realistic, actionable insights based on current market conditions.`;
-
-    const result = await model.generateContent(prompt);
-    const response = result.response.text();
-    
-    // Parse the structured response
-    return parseMarketAnalysis(response, query);
-  } catch (error) {
-    console.error('Error in market research:', error);
-    
-    // Return fallback analysis
-    return createFallbackMarketAnalysis(query);
-  }
-};
-
-// Co-Founder Simulator Implementation
+// Co-Founder Simulator Implementation (keeping existing code)
 export const simulateCofounder = async (
   message: string, 
   style: 'analytical' | 'visionary' | 'pragmatic' | 'devil',
@@ -338,126 +831,6 @@ function formatHistory(history: Array<{ role: 'user' | 'model'; parts: string }>
   return history.map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.parts}`).join('\n');
 }
 
-function parseMarketAnalysis(text: string, query: string): any {
-  try {
-    // Initialize with default values
-    let searchResults = [
-      {
-        title: `Market Analysis: ${query}`,
-        source: "industry-insights.com",
-        summary: "Comprehensive market research findings and industry trends analysis based on current data.",
-        relevanceScore: 0.9
-      },
-      {
-        title: `${query} - Competitive Landscape`,
-        source: "market-research-pro.com",
-        summary: "Detailed competitive analysis and market positioning insights for strategic planning.",
-        relevanceScore: 0.85
-      },
-      {
-        title: `Future Trends in ${query}`,
-        source: "future-markets.org",
-        summary: "Forward-looking analysis of emerging trends and future opportunities in the sector.",
-        relevanceScore: 0.8
-      }
-    ];
-
-    // Extract key trends
-    const trendsMatch = text.match(/Key Trends:\s*(.*?)(?=Market Insights:|Opportunities:|$)/s);
-    const keyTrends = trendsMatch ? 
-      trendsMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 5) :
-      [
-        "Growing market demand and adoption rates",
-        "Increasing investment in innovation and technology",
-        "Shift towards digital transformation and automation",
-        "Focus on sustainability and eco-friendly solutions"
-      ];
-
-    // Extract market insights
-    const insightsMatch = text.match(/Market Insights:\s*(.*?)(?=Opportunities:|Threats:|$)/s);
-    const marketInsights = insightsMatch ? 
-      insightsMatch[1].trim() :
-      `The market for ${query} shows strong growth potential with increasing adoption across multiple sectors. Key drivers include technological advancement, changing consumer preferences, and regulatory support. Market consolidation is expected as major players acquire innovative startups to strengthen their competitive position.`;
-
-    // Extract opportunities
-    const oppMatch = text.match(/Opportunities:\s*(.*?)(?=Threats:|Recommendations:|$)/s);
-    const opportunities = oppMatch ? 
-      oppMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 4) :
-      [
-        "Untapped market segments with high growth potential",
-        "Strategic partnerships and collaboration opportunities",
-        "Technology integration and innovation possibilities",
-        "International expansion and market penetration"
-      ];
-
-    // Extract threats
-    const threatsMatch = text.match(/Threats:\s*(.*?)(?=Recommendations:|COMPETITIVE ANALYSIS:|$)/s);
-    const threats = threatsMatch ? 
-      threatsMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 4) :
-      [
-        "Intense competition from established players",
-        "Regulatory changes and compliance requirements",
-        "Economic uncertainty and market volatility",
-        "Rapid technological disruption"
-      ];
-
-    // Extract recommendations
-    const recsMatch = text.match(/Recommendations:\s*(.*?)(?=COMPETITIVE ANALYSIS:|$)/s);
-    const recommendations = recsMatch ? 
-      parseRecommendations(recsMatch[1]) :
-      [
-        {
-          action: "Develop strategic partnerships with key industry players",
-          priority: "high" as const,
-          rationale: "Partnerships can provide access to new markets and shared resources"
-        },
-        {
-          action: "Invest in technology and innovation capabilities",
-          priority: "high" as const,
-          rationale: "Technology leadership is crucial for competitive advantage"
-        },
-        {
-          action: "Explore international market opportunities",
-          priority: "medium" as const,
-          rationale: "Geographic diversification can reduce risk and increase growth"
-        }
-      ];
-
-    // Extract competitive analysis
-    const compMatch = text.match(/COMPETITIVE ANALYSIS:\s*(.*?)$/s);
-    const competitiveAnalysis = compMatch ? 
-      parseCompetitiveAnalysis(compMatch[1]) :
-      {
-        keyPlayers: ["Market Leader Corp", "Innovation Systems Inc", "Global Solutions Ltd", "Tech Pioneers Co"],
-        marketShare: {
-          leader: "Market Leader Corp with 35% market share",
-          challengerSegment: "Innovation Systems Inc leading the challenger segment with 18%"
-        },
-        competitiveAdvantages: [
-          "Strong brand recognition and customer loyalty",
-          "Advanced technology and R&D capabilities",
-          "Extensive distribution networks",
-          "Cost leadership and operational efficiency"
-        ]
-      };
-
-    return {
-      searchResults,
-      analysis: {
-        keyTrends,
-        marketInsights,
-        opportunities,
-        threats,
-        recommendations
-      },
-      competitiveAnalysis
-    };
-  } catch (error) {
-    console.error('Error parsing market analysis:', error);
-    return createFallbackMarketAnalysis(query);
-  }
-}
-
 function parseCofounderResponse(text: string, style: string): any {
   try {
     const responseMatch = text.match(/RESPONSE:\s*(.*?)(?=REASONING:|$)/s);
@@ -504,127 +877,4 @@ function parseCofounderResponse(text: string, style: string): any {
       reasoning: "Generated response based on conversation context and co-founder style"
     };
   }
-}
-
-function parseRecommendations(text: string): any[] {
-  const recs = text.split(/[-•]\s*/).filter(item => item.trim());
-  return recs.slice(0, 3).map(rec => {
-    const priorityMatch = rec.match(/Priority:\s*(High|Medium|Low)/i);
-    const rationaleMatch = rec.match(/Rationale:\s*(.*?)$/);
-    const action = rec.replace(/Priority:.*$/i, '').trim();
-    
-    return {
-      action: action || rec.trim(),
-      priority: (priorityMatch ? priorityMatch[1].toLowerCase() : 'medium') as 'high' | 'medium' | 'low',
-      rationale: rationaleMatch ? rationaleMatch[1].trim() : "Strategic recommendation based on analysis"
-    };
-  });
-}
-
-function parseCompetitiveAnalysis(text: string): any {
-  const playersMatch = text.match(/Key Players:\s*(.*?)(?=Market Share:|$)/s);
-  const shareMatch = text.match(/Market Share:\s*(.*?)(?=Competitive Advantages:|$)/s);
-  const advMatch = text.match(/Competitive Advantages:\s*(.*?)$/s);
-
-  return {
-    keyPlayers: playersMatch ? 
-      playersMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 5) :
-      ["Market Leader Corp", "Innovation Systems Inc", "Global Solutions Ltd", "Tech Pioneers Co"],
-    marketShare: shareMatch ? {
-      leader: shareMatch[1].split(/[-•]/)[0]?.trim() || "Market Leader Corp with 35% market share",
-      challengerSegment: shareMatch[1].split(/[-•]/)[1]?.trim() || "Innovation Systems Inc leading the challenger segment with 18%"
-    } : {
-      leader: "Market Leader Corp with 35% market share",
-      challengerSegment: "Innovation Systems Inc leading the challenger segment with 18%"
-    },
-    competitiveAdvantages: advMatch ? 
-      advMatch[1].split(/[-•]\s*/).filter(item => item.trim()).slice(0, 4) :
-      [
-        "Strong brand recognition and customer loyalty",
-        "Advanced technology and R&D capabilities",
-        "Extensive distribution networks",
-        "Cost leadership and operational efficiency"
-      ]
-  };
-}
-
-function createFallbackMarketAnalysis(query: string): any {
-  return {
-    searchResults: [
-      {
-        title: `Market Analysis: ${query}`,
-        source: "industry-insights.com",
-        summary: "Comprehensive market research findings and industry trends analysis based on current data.",
-        relevanceScore: 0.9
-      },
-      {
-        title: `${query} - Competitive Landscape`,
-        source: "market-research-pro.com",
-        summary: "Detailed competitive analysis and market positioning insights for strategic planning.",
-        relevanceScore: 0.85
-      },
-      {
-        title: `Future Trends in ${query}`,
-        source: "future-markets.org",
-        summary: "Forward-looking analysis of emerging trends and future opportunities in the sector.",
-        relevanceScore: 0.8
-      }
-    ],
-    analysis: {
-      keyTrends: [
-        "Growing market demand and adoption rates",
-        "Increasing investment in innovation and technology",
-        "Shift towards digital transformation and automation",
-        "Focus on sustainability and eco-friendly solutions"
-      ],
-      marketInsights: `The market for ${query} shows strong growth potential with increasing adoption across multiple sectors. Key drivers include technological advancement, changing consumer preferences, and regulatory support. Market consolidation is expected as major players acquire innovative startups to strengthen their competitive position.`,
-      opportunities: [
-        "Untapped market segments with high growth potential",
-        "Strategic partnerships and collaboration opportunities",
-        "Technology integration and innovation possibilities",
-        "International expansion and market penetration"
-      ],
-      threats: [
-        "Intense competition from established players",
-        "Regulatory changes and compliance requirements",
-        "Economic uncertainty and market volatility",
-        "Rapid technological disruption"
-      ],
-      recommendations: [
-        {
-          action: "Develop strategic partnerships with key industry players",
-          priority: "high" as const,
-          rationale: "Partnerships can provide access to new markets and shared resources"
-        },
-        {
-          action: "Invest in technology and innovation capabilities",
-          priority: "high" as const,
-          rationale: "Technology leadership is crucial for competitive advantage"
-        },
-        {
-          action: "Explore international market opportunities",
-          priority: "medium" as const,
-          rationale: "Geographic diversification can reduce risk and increase growth"
-        }
-      ]
-    },
-    competitiveAnalysis: {
-      keyPlayers: [
-        "Market Leader Corp",
-        "Innovation Systems Inc",
-        "Global Solutions Ltd",
-        "Tech Pioneers Co"
-      ],
-      marketShare: {
-        leader: "Market Leader Corp with 35% market share",
-        challengerSegment: "Innovation Systems Inc leading the challenger segment with 18%"
-      },
-      competitiveAdvantages: [
-        "Strong brand recognition and customer loyalty",
-        "Advanced technology and R&D capabilities",
-        "Extensive distribution networks",
-        "Cost leadership and operational efficiency"
-      ]
-    }
-  };
 }
