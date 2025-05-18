@@ -16,6 +16,32 @@ type CommunicationStyle = {
   color: string;
 };
 
+// Helper function to parse markdown and clean text for display
+const parseMarkdown = (text: string): string => {
+  if (!text) return '';
+  
+  // Convert **bold** to <strong>bold</strong>
+  let html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // Convert *italic* to <em>italic</em>
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  
+  // Convert line breaks to <br>
+  html = html.replace(/\n/g, '<br>');
+  
+  return html;
+};
+
+// Component to render parsed markdown
+const MarkdownText: React.FC<{ content: string }> = ({ content }) => {
+  return (
+    <div 
+      className="whitespace-pre-line"
+      dangerouslySetInnerHTML={{ __html: parseMarkdown(content) }}
+    />
+  );
+};
+
 type Message = {
   role: 'user' | 'cofounder';
   content: string;
@@ -250,7 +276,9 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
         {data.reasoning && (
           <div className="text-xs">
             <span className="font-medium text-gray-600 dark:text-gray-400">Reasoning:</span>
-            <span className="ml-2 text-gray-500 dark:text-gray-400">{data.reasoning}</span>
+            <span className="ml-2 text-gray-500 dark:text-gray-400">
+              <MarkdownText content={data.reasoning} />
+            </span>
           </div>
         )}
         
@@ -262,7 +290,9 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
             </span>
             <ul className="ml-4 mt-1 space-y-1">
               {data.nextSteps.map((step, index) => (
-                <li key={index} className="text-gray-500 dark:text-gray-400">• {step}</li>
+                <li key={index} className="text-gray-500 dark:text-gray-400">
+                  • <MarkdownText content={step} />
+                </li>
               ))}
             </ul>
           </div>
@@ -276,7 +306,9 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
             </span>
             <ul className="ml-4 mt-1 space-y-1">
               {data.dataPoints.map((point, index) => (
-                <li key={index} className="text-gray-500 dark:text-gray-400">• {point}</li>
+                <li key={index} className="text-gray-500 dark:text-gray-400">
+                  • <MarkdownText content={point} />
+                </li>
               ))}
             </ul>
           </div>
@@ -290,7 +322,9 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
             </span>
             <ul className="ml-4 mt-1 space-y-1">
               {data.risks.map((risk, index) => (
-                <li key={index} className="text-gray-500 dark:text-gray-400">• {risk}</li>
+                <li key={index} className="text-gray-500 dark:text-gray-400">
+                  • <MarkdownText content={risk} />
+                </li>
               ))}
             </ul>
           </div>
@@ -304,7 +338,9 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
             </span>
             <ul className="ml-4 mt-1 space-y-1">
               {data.opportunities.map((opportunity, index) => (
-                <li key={index} className="text-gray-500 dark:text-gray-400">• {opportunity}</li>
+                <li key={index} className="text-gray-500 dark:text-gray-400">
+                  • <MarkdownText content={opportunity} />
+                </li>
               ))}
             </ul>
           </div>
@@ -496,7 +532,9 @@ export const CoFounderSimulator: React.FC<CoFounderSimulatorProps> = ({ onBack }
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
                   }`}
                 >
-                  <p className="whitespace-pre-line">{message.content}</p>
+                  <div className="whitespace-pre-line">
+                    <MarkdownText content={message.content} />
+                  </div>
                   {message.role === 'cofounder' && renderStructuredData(message.structuredData)}
                 </div>
               </div>
